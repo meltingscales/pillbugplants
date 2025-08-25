@@ -391,12 +391,14 @@ impl World {
 
 struct App {
     world: World,
+    show_taxonomy: bool,
 }
 
 impl App {
     fn new(width: usize, height: usize) -> Self {
         App {
             world: World::new(width, height),
+            show_taxonomy: false,
         }
     }
     
@@ -443,8 +445,10 @@ fn run_app<B: Backend>(
 
         if event::poll(std::time::Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
-                if let KeyCode::Char('q') = key.code {
-                    return Ok(());
+                match key.code {
+                    KeyCode::Char('q') => return Ok(()),
+                    KeyCode::Char('t') => app.show_taxonomy = !app.show_taxonomy,
+                    _ => {}
                 }
             }
         }
@@ -454,11 +458,25 @@ fn run_app<B: Backend>(
 }
 
 fn ui(f: &mut Frame, app: &App) {
+    let main_chunks = if app.show_taxonomy {
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .margin(1)
+            .constraints([Constraint::Min(0), Constraint::Length(25)].as_ref())
+            .split(f.area())
+    } else {
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .margin(1)
+            .constraints([Constraint::Min(0)].as_ref())
+            .split(f.area())
+    };
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
         .constraints([Constraint::Min(0), Constraint::Length(3)].as_ref())
-        .split(f.area());
+        .split(main_chunks[0]);
 
     let mut lines = Vec::new();
     for y in 0..app.world.height {
@@ -484,9 +502,66 @@ fn ui(f: &mut Frame, app: &App) {
         String::new()
     };
     let info = Paragraph::new(format!(
-        "Tick: {} | {}{} | Press 'q' to quit",
+        "Tick: {} | {}{} | Press 'q' to quit | Press 't' for taxonomy",
         app.world.tick, day_night, rain_status
     ))
     .block(Block::default().title("Info").borders(Borders::ALL));
     f.render_widget(info, chunks[1]);
+
+    // Render taxonomy panel if enabled
+    if app.show_taxonomy {
+        let taxonomy_text = vec![
+            Line::from(vec![
+                Span::styled(" ", Style::default().fg(Color::Black)),
+                Span::raw(" = Empty space")
+            ]),
+            Line::from(vec![
+                Span::styled("#", Style::default().fg(Color::Rgb(101, 67, 33))),
+                Span::raw(" = Dirt (solid ground)")
+            ]),
+            Line::from(vec![
+                Span::styled(".", Style::default().fg(Color::Yellow)),
+                Span::raw(" = Sand (falls)")
+            ]),
+            Line::from(vec![
+                Span::styled("~", Style::default().fg(Color::Blue)),
+                Span::raw(" = Water (flows)")
+            ]),
+            Line::from(vec![
+                Span::styled("P", Style::default().fg(Color::Green)),
+                Span::raw(" = Plant (ages 0-200)")
+            ]),
+            Line::from("  - Needs nutrients"),
+            Line::from("  - Reproduces in day"),
+            Line::from("  - Gets darker with age"),
+            Line::from(vec![
+                Span::styled("B", Style::default().fg(Color::Gray)),
+                Span::raw(" = Pillbug (ages 0-180)")
+            ]),
+            Line::from("  - Eats plants"),
+            Line::from("  - Reproduces when fed"),
+            Line::from("  - Gets darker with age"),
+            Line::from(vec![
+                Span::styled("*", Style::default().fg(Color::Magenta)),
+                Span::raw(" = Nutrient (diffuses)")
+            ]),
+            Line::from("  - From decomposition"),
+            Line::from("  - Consumed by plants"),
+            Line::from(""),
+            Line::from("Physics:"),
+            Line::from("- Gravity affects all"),
+            Line::from("- 8-way support check"),
+            Line::from("- Rain spawns at night"),
+            Line::from(""),
+            Line::from("Ecosystem:"),
+            Line::from("- Plants die → nutrients"),
+            Line::from("- Bugs eat plants"),
+            Line::from("- Closed nutrient loop"),
+        ];
+
+        let taxonomy_panel = Paragraph::new(taxonomy_text)
+            .block(Block::default().title("Taxonomy").borders(Borders::ALL))
+            .wrap(ratatui::widgets::Wrap { trim: true });
+        f.render_widget(taxonomy_panel, main_chunks[1]);
+    }
 }
