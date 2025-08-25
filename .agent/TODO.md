@@ -1,19 +1,30 @@
 # TODO - Pillbug Plants
 
-## Current Status
-- Basic ratatui-based physics sandbox implemented
-- Falling sand/water physics working
-- Day/night cycle implemented
-- Basic plant growth during daylight
-- Pillbug random movement
-- ASCII rendering with colored tiles
+## Current Status ✅
+- ✅ Basic ratatui-based physics sandbox implemented
+- ✅ Falling sand/water physics working
+- ✅ Day/night cycle implemented
+- ✅ Rain system (spawns during night, variable intensity)
+- ✅ Plant/pillbug gravity with 8-directional support checking
+- ✅ Nutrient diffusion system
+- ✅ Plant aging, reproduction, starvation, death, and decomposition
+- ✅ Pillbug aging, reproduction, eating, starvation, death, and decomposition
+- ✅ Age-based visual fading (older entities get darker)
+- ✅ ASCII rendering with colored tiles
+- ✅ Dynamic world sizing based on terminal dimensions
 
-## Next Iterations
+## Ecosystem Mechanics
+- Plants consume nutrients to slow aging and reproduce during daylight
+- Plants die at age 200 and decompose into nutrients
+- Pillbugs eat plants (converting them to nutrients) to slow aging
+- Pillbugs reproduce when well-fed and die at age 180
+- All deaths create nutrients, maintaining ecosystem balance
+- Rain provides periodic water influx
+
+## Next Iterations (Future)
 - [ ] More complex plant structures (segments, buds, branches, flowers)
-- [ ] Plant photosynthesis and nutrient consumption
-- [ ] Pillbug reproduction and starvation mechanics
-- [ ] Nutrient diffusion system
-- [ ] Plant decomposition when they die
+- [ ] Enhanced photosynthesis mechanics (light-based growth rates)
+- [ ] Different plant/pillbug species
+- [ ] Seasonal cycles affecting behavior
 - [ ] More realistic physics (velocity, momentum)
-- [ ] Better collision detection
 - [ ] Save/load world state
