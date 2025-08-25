@@ -7,6 +7,10 @@ Every tick, update physics deterministically: falling sand/water, nutrient diffu
 day/night light cycle, plant growth/photosynthesis, bug behavior.  
 Render ASCII tiles in ratatui each frame.  
 
+Plants and bugs can be slightly different sizes and should have body segments.
+Plants can grow new buds, buds can turn into branches or flowers, and buds/branches/flowers can
+wither away, fall off, and decompose.
+
 After each file edit, make a commit and push.  
 Keep a running TODO and design notes in `.agent/`.  
 Focus on core engine and simulation; tests are secondary.  
