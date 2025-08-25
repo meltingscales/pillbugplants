@@ -14,8 +14,6 @@ use ratatui::{
 use rand::{Rng, seq::SliceRandom};
 use std::io;
 
-const WORLD_WIDTH: usize = 80;
-const WORLD_HEIGHT: usize = 40;
 
 #[derive(Clone, Copy, PartialEq)]
 enum TileType {
@@ -55,15 +53,20 @@ impl TileType {
 }
 
 struct World {
-    tiles: [[TileType; WORLD_WIDTH]; WORLD_HEIGHT],
+    tiles: Vec<Vec<TileType>>,
+    width: usize,
+    height: usize,
     tick: u64,
     day_cycle: f32,
 }
 
 impl World {
-    fn new() -> Self {
+    fn new(width: usize, height: usize) -> Self {
+        let tiles = vec![vec![TileType::Empty; width]; height];
         let mut world = World {
-            tiles: [[TileType::Empty; WORLD_WIDTH]; WORLD_HEIGHT],
+            tiles,
+            width,
+            height,
             tick: 0,
             day_cycle: 0.0,
         };
@@ -75,35 +78,35 @@ impl World {
     fn generate_initial_world(&mut self) {
         let mut rng = rand::thread_rng();
         
-        for y in WORLD_HEIGHT - 10..WORLD_HEIGHT {
-            for x in 0..WORLD_WIDTH {
+        for y in self.height - 10..self.height {
+            for x in 0..self.width {
                 if rng.gen_bool(0.8) {
                     self.tiles[y][x] = TileType::Dirt;
                 }
             }
         }
         
-        for _ in 0..50 {
-            let x = rng.gen_range(0..WORLD_WIDTH);
-            let y = rng.gen_range(WORLD_HEIGHT - 8..WORLD_HEIGHT);
+        for _ in 0..(self.width / 2) {
+            let x = rng.gen_range(0..self.width);
+            let y = rng.gen_range(self.height - 8..self.height);
             self.tiles[y][x] = TileType::Sand;
         }
         
-        for _ in 0..20 {
-            let x = rng.gen_range(0..WORLD_WIDTH);
-            let y = rng.gen_range(WORLD_HEIGHT - 5..WORLD_HEIGHT);
+        for _ in 0..(self.width / 4) {
+            let x = rng.gen_range(0..self.width);
+            let y = rng.gen_range(self.height - 5..self.height);
             self.tiles[y][x] = TileType::Water;
         }
         
-        for _ in 0..5 {
-            let x = rng.gen_range(0..WORLD_WIDTH);
-            let y = rng.gen_range(WORLD_HEIGHT - 15..WORLD_HEIGHT - 5);
+        for _ in 0..(self.width / 16) {
+            let x = rng.gen_range(0..self.width);
+            let y = rng.gen_range(self.height - 15..self.height - 5);
             self.tiles[y][x] = TileType::Plant;
         }
         
-        for _ in 0..3 {
-            let x = rng.gen_range(0..WORLD_WIDTH);
-            let y = rng.gen_range(WORLD_HEIGHT - 10..WORLD_HEIGHT);
+        for _ in 0..(self.width / 30) {
+            let x = rng.gen_range(0..self.width);
+            let y = rng.gen_range(self.height - 10..self.height);
             self.tiles[y][x] = TileType::Pillbug;
         }
     }
@@ -117,10 +120,10 @@ impl World {
     }
     
     fn update_physics(&mut self) {
-        let mut new_tiles = self.tiles;
+        let mut new_tiles = self.tiles.clone();
         
-        for y in (0..WORLD_HEIGHT - 1).rev() {
-            for x in 0..WORLD_WIDTH {
+        for y in (0..self.height - 1).rev() {
+            for x in 0..self.width {
                 match self.tiles[y][x] {
                     TileType::Sand | TileType::Water => {
                         if self.tiles[y + 1][x] == TileType::Empty {
@@ -132,7 +135,7 @@ impl World {
                             if let Some(&(dx, dy)) = directions.choose(&mut rng) {
                                 let nx = (x as i32 + dx) as usize;
                                 let ny = (y as i32 + dy) as usize;
-                                if nx < WORLD_WIDTH && ny < WORLD_HEIGHT && self.tiles[ny][nx] == TileType::Empty {
+                                if nx < self.width && ny < self.height && self.tiles[ny][nx] == TileType::Empty {
                                     new_tiles[y][x] = TileType::Empty;
                                     new_tiles[ny][nx] = TileType::Water;
                                 }
@@ -149,10 +152,10 @@ impl World {
     
     fn update_life(&mut self) {
         let mut rng = rand::thread_rng();
-        let mut new_tiles = self.tiles;
+        let mut new_tiles = self.tiles.clone();
         
-        for y in 0..WORLD_HEIGHT {
-            for x in 0..WORLD_WIDTH {
+        for y in 0..self.height {
+            for x in 0..self.width {
                 match self.tiles[y][x] {
                     TileType::Plant => {
                         if self.day_cycle.sin() > 0.0 && rng.gen_bool(0.02) {
@@ -160,7 +163,7 @@ impl World {
                             if let Some(&(dx, dy)) = directions.choose(&mut rng) {
                                 let nx = (x as i32 + dx) as usize;
                                 let ny = (y as i32 + dy) as usize;
-                                if nx < WORLD_WIDTH && ny < WORLD_HEIGHT && self.tiles[ny][nx] == TileType::Empty {
+                                if nx < self.width && ny < self.height && self.tiles[ny][nx] == TileType::Empty {
                                     new_tiles[ny][nx] = TileType::Plant;
                                 }
                             }
@@ -172,7 +175,7 @@ impl World {
                             if let Some(&(dx, dy)) = directions.choose(&mut rng) {
                                 let nx = (x as i32 + dx) as usize;
                                 let ny = (y as i32 + dy) as usize;
-                                if nx < WORLD_WIDTH && ny < WORLD_HEIGHT && self.tiles[ny][nx] == TileType::Empty {
+                                if nx < self.width && ny < self.height && self.tiles[ny][nx] == TileType::Empty {
                                     new_tiles[y][x] = TileType::Empty;
                                     new_tiles[ny][nx] = TileType::Pillbug;
                                 }
@@ -197,9 +200,9 @@ struct App {
 }
 
 impl App {
-    fn new() -> Self {
+    fn new(width: usize, height: usize) -> Self {
         App {
-            world: World::new(),
+            world: World::new(width, height),
         }
     }
     
@@ -215,7 +218,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new();
+    let size = terminal.size()?;
+    let world_width = size.width.saturating_sub(4) as usize;
+    let world_height = size.height.saturating_sub(6) as usize;
+    
+    let mut app = App::new(world_width, world_height);
     let res = run_app(&mut terminal, &mut app);
 
     disable_raw_mode()?;
@@ -260,9 +267,9 @@ fn ui(f: &mut Frame, app: &App) {
         .split(f.area());
 
     let mut lines = Vec::new();
-    for y in 0..WORLD_HEIGHT {
+    for y in 0..app.world.height {
         let mut spans = Vec::new();
-        for x in 0..WORLD_WIDTH {
+        for x in 0..app.world.width {
             let tile = app.world.tiles[y][x];
             spans.push(Span::styled(
                 tile.to_char().to_string(),
