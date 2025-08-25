@@ -7,12 +7,11 @@ use ratatui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout},
     style::{Color, Style},
-    symbols::DOT,
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
     Frame, Terminal,
 };
-use rand::Rng;
+use rand::{Rng, seq::SliceRandom};
 use std::io;
 
 const WORLD_WIDTH: usize = 80;
@@ -253,12 +252,12 @@ fn run_app<B: Backend>(
     }
 }
 
-fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
+fn ui(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
         .constraints([Constraint::Min(0), Constraint::Length(3)].as_ref())
-        .split(f.size());
+        .split(f.area());
 
     let mut lines = Vec::new();
     for y in 0..WORLD_HEIGHT {
