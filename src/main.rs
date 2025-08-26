@@ -194,13 +194,6 @@ impl TileType {
         matches!(self, TileType::PillbugHead(_, _) | TileType::PillbugBody(_, _) | TileType::PillbugLegs(_, _))
     }
     
-    fn pillbug_age(self) -> Option<u8> {
-        match self {
-            TileType::PillbugHead(age, _) | TileType::PillbugBody(age, _) | TileType::PillbugLegs(age, _) => Some(age),
-            _ => None,
-        }
-    }
-    
     fn get_size(self) -> Option<Size> {
         match self {
             TileType::PlantStem(_, size) | TileType::PlantLeaf(_, size) | 
@@ -210,14 +203,6 @@ impl TileType {
         }
     }
     
-    fn get_age(self) -> Option<u8> {
-        match self {
-            TileType::PlantStem(age, _) | TileType::PlantLeaf(age, _) | 
-            TileType::PlantBud(age, _) | TileType::PlantFlower(age, _) |
-            TileType::PillbugHead(age, _) | TileType::PillbugBody(age, _) | TileType::PillbugLegs(age, _) => Some(age),
-            _ => None,
-        }
-    }
 }
 
 fn random_size(rng: &mut impl Rng) -> Size {

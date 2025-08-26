@@ -25,22 +25,29 @@
 - Taxonomy panel (toggle with 't' key) with detailed descriptions
 - 8-way support checking with structural plant support
 
-### 🚧 Missing Priority Features
-- **Size variations**: Different sized plants and bugs  
-- **Enhanced bug behavior**: More intelligent movement, group behavior, better segment coordination
-- **More physics materials**: Maybe stone, organic matter types
-- **Seasonal cycles**: Beyond just day/night
-- **Better decomposition**: Gradual decay rather than instant nutrient conversion
-- **Plant diseases/wilting**: Environmental stress effects
+### ✅ Recently Completed (MAJOR UPDATE!)
+- **Size variations**: Small/Medium/Large organisms with different lifespans & behaviors
+- **Enhanced aging**: Size affects lifespan multipliers and growth rates  
+- **Size-based interactions**: Large pillbugs eat plants more easily, especially small plants
+- **Visual size differentiation**: Different Unicode characters (i|║, l L Ł, etc.)
+- **Size inheritance**: Offspring inherit parent size with some variation
+- **Balanced ecosystem**: Size creates natural population dynamics
+
+### 🚧 Current Priority Issues  
+- **Compiler warnings**: Remove unused `pillbug_age` and `get_age` methods
+- **Pillbug coordination**: Body/legs should follow head movement in formation
+- **Plant physics**: Better attachment/falling logic for connected plant parts
+- **Gradual decomposition**: Multi-stage decay instead of instant death→nutrient
 
 ### 🎯 Next Development Priorities
 1. ✅ ~~Implement multi-segment plant bodies (stems, buds, leaves, flowers)~~
-2. ✅ ~~Add plant branching and bud development system~~
+2. ✅ ~~Add plant branching and bud development system~~  
 3. ✅ ~~Create multi-segment pillbug bodies (head, segments, legs)~~
-4. Add size variations for organisms (small/medium/large)
-5. Improve pillbug segment coordination and movement behavior
-6. Improve decomposition system with gradual decay stages
-7. Add more sophisticated pillbug AI and group behaviors
+4. ✅ ~~Add size variations for organisms (small/medium/large)~~
+5. Fix compiler warnings and clean up unused code
+6. Improve pillbug multi-segment movement coordination  
+7. Enhance plant support/attachment physics
+8. Add gradual withering/decay stages
 
 ## Technical Architecture
 

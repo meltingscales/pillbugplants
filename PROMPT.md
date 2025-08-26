@@ -14,3 +14,6 @@ wither away, fall off, and decompose.
 After each file edit, make a commit and push.  
 Keep a running TODO and design notes in `.agent/`.  
 Focus on core engine and simulation; tests are secondary.  
+
+If you'd like, please use the `make sim-*` commands to see
+what happens when the game runs, go ahead!
