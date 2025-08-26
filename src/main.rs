@@ -109,7 +109,7 @@ impl TileType {
             TileType::Sand => Color::Yellow,
             TileType::Water => Color::Blue,
             TileType::PlantStem(age, size) => {
-                let base_intensity = (255 - age as u16).max(80) as u8;
+                let base_intensity = (255u16.saturating_sub(age as u16)).max(80) as u8;
                 let size_boost = match size {
                     Size::Small => 0.85,   // Slightly dimmer
                     Size::Medium => 1.0,   // Normal
@@ -119,7 +119,7 @@ impl TileType {
                 Color::Rgb(intensity / 3, intensity, intensity / 4) // Brown-green stem
             },
             TileType::PlantLeaf(age, size) => {
-                let base_intensity = (150 - age as u16).max(60) as u8;
+                let base_intensity = (150u16.saturating_sub(age as u16)).max(60) as u8;
                 let size_boost = match size {
                     Size::Small => 0.85,
                     Size::Medium => 1.0,
@@ -129,7 +129,7 @@ impl TileType {
                 Color::Rgb(0, intensity, 0) // Green leaves
             },
             TileType::PlantBud(age, size) => {
-                let base_intensity = (50 - age as u16).max(120) as u8;
+                let base_intensity = (50u16.saturating_sub(age as u16)).max(120) as u8;
                 let size_boost = match size {
                     Size::Small => 0.85,
                     Size::Medium => 1.0,
@@ -165,7 +165,7 @@ impl TileType {
                 Color::Rgb(intensity, intensity / 2, 0) // Brown withered color
             },
             TileType::PillbugHead(age, size) => {
-                let base_intensity = (180 - age as u16).max(60) as u8;
+                let base_intensity = (180u16.saturating_sub(age as u16)).max(60) as u8;
                 let size_boost = match size {
                     Size::Small => 0.8,
                     Size::Medium => 1.0,
@@ -175,7 +175,7 @@ impl TileType {
                 Color::Rgb(intensity.saturating_add(20), intensity, intensity.saturating_sub(10)) // Slightly reddish head
             },
             TileType::PillbugBody(age, size) => {
-                let base_intensity = (180 - age as u16).max(50) as u8;
+                let base_intensity = (180u16.saturating_sub(age as u16)).max(50) as u8;
                 let size_boost = match size {
                     Size::Small => 0.8,
                     Size::Medium => 1.0,
@@ -185,7 +185,7 @@ impl TileType {
                 Color::Rgb(intensity, intensity, intensity) // Gray body
             },
             TileType::PillbugLegs(age, size) => {
-                let base_intensity = (180 - age as u16).max(40) as u8;
+                let base_intensity = (180u16.saturating_sub(age as u16)).max(40) as u8;
                 let size_boost = match size {
                     Size::Small => 0.8,
                     Size::Medium => 1.0,

@@ -17,3 +17,8 @@ Focus on core engine and simulation; tests are secondary.
 
 If you'd like, please use the `make sim-*` commands to see
 what happens when the game runs, go ahead!
+
+Make sure not to run `make run` since it'll fail.
+
+Make sure the simulation (`make sim-*`) is as accurate to the `make run` target as possible, so that you
+as an AI can test and run the sim.
