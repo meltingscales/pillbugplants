@@ -46,6 +46,16 @@ clippy:
 # Full check (format, clippy, test, build)
 full-check: fmt clippy test build
 
+# AI simulation testing
+sim-test: build
+	cargo run -- --sim-ticks=500 --output-file=simulation_test.txt
+
+sim-short: build
+	cargo run -- --sim-ticks=100
+
+sim-long: build
+	cargo run -- --sim-ticks=1000 --output-file=long_simulation.txt
+
 # Help
 help:
 	@echo "Available targets:"
@@ -60,4 +70,7 @@ help:
 	@echo "  fmt        - Format code"
 	@echo "  clippy     - Run clippy linter"
 	@echo "  full-check - Run fmt, clippy, test, and build"
+	@echo "  sim-test   - Run 500-tick simulation and save to file"
+	@echo "  sim-short  - Run 100-tick simulation to console"
+	@echo "  sim-long   - Run 1000-tick simulation and save to file"
 	@echo "  help       - Show this help"

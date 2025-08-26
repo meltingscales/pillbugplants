@@ -13,6 +13,9 @@ use ratatui::{
 };
 use rand::{Rng, seq::SliceRandom};
 use std::io;
+use std::env;
+use std::fs::File;
+use std::io::Write;
 
 
 #[derive(Clone, Copy, PartialEq)]
@@ -249,6 +252,20 @@ impl World {
         
         world.generate_initial_world();
         world
+    }
+    
+    fn to_string(&self) -> String {
+        let mut result = String::new();
+        for y in 0..self.height {
+            for x in 0..self.width {
+                result.push(self.tiles[y][x].to_char());
+            }
+            result.push('\n');
+        }
+        result.push_str(&format!("Tick: {}\n", self.tick));
+        result.push_str(&format!("Day/Night: {}\n", if self.is_day() { "Day" } else { "Night" }));
+        result.push_str(&format!("Rain intensity: {:.2}\n", self.rain_intensity));
+        result
     }
     
     fn generate_initial_world(&mut self) {
@@ -954,6 +971,46 @@ impl App {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<String> = env::args().collect();
+    
+    // Parse command line arguments
+    let mut sim_ticks: Option<u64> = None;
+    let mut output_file: Option<String> = None;
+    
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            arg if arg.starts_with("--sim-ticks=") => {
+                let ticks_str = arg.strip_prefix("--sim-ticks=").unwrap();
+                sim_ticks = Some(ticks_str.parse().map_err(|_| "Invalid --sim-ticks value")?);
+            }
+            arg if arg.starts_with("--output-file=") => {
+                let file_str = arg.strip_prefix("--output-file=").unwrap();
+                output_file = Some(file_str.to_string());
+            }
+            "--help" | "-h" => {
+                println!("Pillbug Plants Simulation");
+                println!("Usage: {} [options]", args[0]);
+                println!("Options:");
+                println!("  --sim-ticks=N    Run simulation for N ticks and exit");
+                println!("  --output-file=F  Save simulation output to file F");
+                println!("  --help, -h       Show this help message");
+                return Ok(());
+            }
+            _ => {
+                eprintln!("Unknown argument: {}", args[i]);
+                eprintln!("Use --help for usage information");
+                std::process::exit(1);
+            }
+        }
+        i += 1;
+    }
+    
+    // Run in simulation mode if --sim-ticks is specified
+    if let Some(ticks) = sim_ticks {
+        return run_simulation(ticks, output_file);
+    }
+    
     // Set up panic hook to restore terminal state
     std::panic::set_hook(Box::new(|panic_info| {
         // Try to restore terminal state
@@ -992,6 +1049,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("{err:?}");
     }
 
+    Ok(())
+}
+
+fn run_simulation(ticks: u64, output_file: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+    // Create a world with fixed dimensions for consistency
+    let world_width = 80;
+    let world_height = 40;
+    let mut world = World::new(world_width, world_height);
+    
+    println!("Running simulation for {} ticks...", ticks);
+    
+    // Run simulation
+    for tick in 0..ticks {
+        world.update();
+        
+        // Print progress every 100 ticks
+        if tick % 100 == 0 || tick == ticks - 1 {
+            println!("Progress: {}/{} ticks", tick + 1, ticks);
+        }
+    }
+    
+    let final_state = world.to_string();
+    
+    // Output results
+    if let Some(file_path) = output_file {
+        let mut file = File::create(&file_path)?;
+        write!(file, "{}", final_state)?;
+        println!("Simulation results saved to: {}", file_path);
+    } else {
+        println!("Final simulation state:");
+        print!("{}", final_state);
+    }
+    
     Ok(())
 }
 
