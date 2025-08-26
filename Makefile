@@ -1,7 +1,7 @@
 .PHONY: build run clean check test release install
 
 # Default target
-all: build
+all: help
 
 # Build the project
 build:

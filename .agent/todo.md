@@ -7,7 +7,7 @@
 - [x] ✅ Implement plant body structure with connected segments  
 - [x] ✅ Design pillbug segment system (head, body segments, legs)
 - [x] ✅ Implement pillbug multi-segment bodies
-- [ ] Add size variations (small/medium/large organisms)
+- [x] ✅ Add size variations (small/medium/large organisms)
 
 ### Advanced Plant Growth  
 - [x] ✅ Implement bud development system (bud → stem/leaf/flower)
