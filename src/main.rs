@@ -698,6 +698,12 @@ impl World {
             return;
         }
         
+        // Old stems may shed parts as they age (structural failure)
+        let shedding_threshold = (max_age as u16 * 3 / 4) as u8; // Last 25% of lifespan
+        if new_age > shedding_threshold && rng.gen_bool(0.02) {
+            self.try_shed_plant_parts(x, y, size, new_tiles, rng);
+        }
+        
         // Check for nutrients and consume them
         let mut found_nutrients = false;
         for dy in -1..=1 {
@@ -753,6 +759,13 @@ impl World {
         // Leaves die after adjusted lifespan - transition to withered state
         let max_age = (150.0 * size.lifespan_multiplier()) as u8;
         if new_age >= max_age {
+            new_tiles[y][x] = TileType::PlantWithered(0, size);
+            return;
+        }
+        
+        // Very old leaves may fall off early due to weakness
+        let early_drop_threshold = (max_age as u16 * 4 / 5) as u8; // Last 20% of lifespan
+        if new_age > early_drop_threshold && rng.gen_bool(0.03) {
             new_tiles[y][x] = TileType::PlantWithered(0, size);
             return;
         }
@@ -1297,6 +1310,56 @@ impl World {
             }
         }
         false
+    }
+    
+    fn try_shed_plant_parts(&self, x: usize, y: usize, plant_size: Size, new_tiles: &mut [Vec<TileType>], rng: &mut impl Rng) {
+        // Look for plant parts attached to this stem that might fall off
+        for dy in -2..=2 {
+            for dx in -2..=2 {
+                if dx == 0 && dy == 0 { continue; } // Skip self
+                let nx = (x as i32 + dx) as usize;
+                let ny = (y as i32 + dy) as usize;
+                if nx < self.width && ny < self.height {
+                    match self.tiles[ny][nx] {
+                        TileType::PlantLeaf(leaf_age, leaf_size) if leaf_size == plant_size => {
+                            // Older leaves more likely to fall, larger plants hold on better
+                            let drop_chance = match plant_size {
+                                Size::Small => 0.3,   // Small plants drop easily
+                                Size::Medium => 0.2,  // Medium stability 
+                                Size::Large => 0.1,   // Large plants hold parts better
+                            };
+                            let age_factor = (leaf_age as f32 / 150.0).min(1.0); // 0.0 to 1.0
+                            let final_chance = drop_chance * (0.5 + age_factor); // Older = more likely to drop
+                            
+                            if rng.gen_bool(final_chance as f64) {
+                                new_tiles[ny][nx] = TileType::PlantWithered(0, leaf_size);
+                            }
+                        },
+                        TileType::PlantFlower(flower_age, flower_size) if flower_size == plant_size => {
+                            // Flowers drop more easily than leaves
+                            let drop_chance = match plant_size {
+                                Size::Small => 0.4,
+                                Size::Medium => 0.3,
+                                Size::Large => 0.2,
+                            };
+                            let age_factor = (flower_age as f32 / 100.0).min(1.0);
+                            let final_chance = drop_chance * (0.3 + age_factor);
+                            
+                            if rng.gen_bool(final_chance as f64) {
+                                new_tiles[ny][nx] = TileType::PlantWithered(0, flower_size);
+                            }
+                        },
+                        TileType::PlantBud(_, bud_size) if bud_size == plant_size => {
+                            // Buds occasionally fall off aging stems
+                            if rng.gen_bool(0.15) {
+                                new_tiles[ny][nx] = TileType::Empty; // Buds just disappear
+                            }
+                        },
+                        _ => {}
+                    }
+                }
+            }
+        }
     }
 }
 
