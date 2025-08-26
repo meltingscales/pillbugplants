@@ -5,25 +5,29 @@
 ### ✅ Implemented Core Features
 - Basic ratatui terminal UI with dynamic world sizing
 - Physics simulation: gravity, falling sand/water, support checking
-- Tile-based world with dirt, sand, water, nutrients, multi-segment plants, pillbugs
+- Tile-based world with dirt, sand, water, nutrients, multi-segment plants, multi-segment pillbugs
 - Day/night cycle affecting plant reproduction and rain
-- **Multi-segment plant system** (NEW!):
+- **Multi-segment plant system**:
   - PlantStem (|): Structural support, consumes nutrients, grows buds
   - PlantLeaf (L): Photosynthesis, produces nutrients during day
   - PlantBud (o): Growth points that develop into stems/leaves/flowers
   - PlantFlower (*): Reproduction, spreads seeds during day
+- **Multi-segment pillbug system** (NEW!):
+  - PillbugHead (@): Eats plants, coordinates movement and reproduction
+  - PillbugBody (O): Main body segment, ages with head
+  - PillbugLegs (w): Locomotion segment, ages with body
 - Life systems:
   - Plants have specialized parts with different lifespans and behaviors
-  - Pillbugs age (0-180), eat plant parts (prefer leaves), move randomly, reproduce when fed
+  - Pillbugs now have 3-segment bodies, heads eat plants, bodies/legs follow
+  - All segments age (0-180) and decompose into nutrients when they die
   - Nutrient diffusion and cycling
 - Rain system during night cycles
-- Taxonomy panel (toggle with 't' key) with detailed plant part descriptions
+- Taxonomy panel (toggle with 't' key) with detailed descriptions
 - 8-way support checking with structural plant support
 
 ### 🚧 Missing Priority Features
-- **Multi-segment pillbug bodies**: Pillbugs should have head, body segments, legs
 - **Size variations**: Different sized plants and bugs  
-- **Enhanced bug behavior**: More intelligent movement, group behavior
+- **Enhanced bug behavior**: More intelligent movement, group behavior, better segment coordination
 - **More physics materials**: Maybe stone, organic matter types
 - **Seasonal cycles**: Beyond just day/night
 - **Better decomposition**: Gradual decay rather than instant nutrient conversion
@@ -32,10 +36,11 @@
 ### 🎯 Next Development Priorities
 1. ✅ ~~Implement multi-segment plant bodies (stems, buds, leaves, flowers)~~
 2. ✅ ~~Add plant branching and bud development system~~
-3. Create multi-segment pillbug bodies (head, segments, legs)
+3. ✅ ~~Create multi-segment pillbug bodies (head, segments, legs)~~
 4. Add size variations for organisms (small/medium/large)
-5. Improve decomposition system with gradual decay stages
-6. Add more sophisticated pillbug AI and group behaviors
+5. Improve pillbug segment coordination and movement behavior
+6. Improve decomposition system with gradual decay stages
+7. Add more sophisticated pillbug AI and group behaviors
 
 ## Technical Architecture
 

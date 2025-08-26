@@ -5,8 +5,8 @@
 ### Multi-Segment Bodies
 - [x] ✅ Design plant segment system (stem, bud, leaf, flower)
 - [x] ✅ Implement plant body structure with connected segments  
-- [ ] Design pillbug segment system (head, body segments, legs)
-- [ ] Implement pillbug multi-segment bodies
+- [x] ✅ Design pillbug segment system (head, body segments, legs)
+- [x] ✅ Implement pillbug multi-segment bodies
 - [ ] Add size variations (small/medium/large organisms)
 
 ### Advanced Plant Growth  

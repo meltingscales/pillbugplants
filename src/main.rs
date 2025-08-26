@@ -25,7 +25,9 @@ enum TileType {
     PlantLeaf(u8),   // Photosynthesis organs, age 0-150
     PlantBud(u8),    // Growth points that become branches/flowers, age 0-50
     PlantFlower(u8), // Reproductive organs, age 0-100
-    Pillbug(u8),     // Age of pillbug (0-255, dies when reaching 255)
+    PillbugHead(u8),    // Head segment of pillbug, age 0-180
+    PillbugBody(u8),    // Body segment of pillbug, age 0-180  
+    PillbugLegs(u8),    // Leg segment of pillbug, age 0-180
     Nutrient,
 }
 
@@ -40,7 +42,9 @@ impl TileType {
             TileType::PlantLeaf(_) => 'L',
             TileType::PlantBud(_) => 'o',
             TileType::PlantFlower(_) => '*',
-            TileType::Pillbug(_) => 'B',
+            TileType::PillbugHead(_) => '@',
+            TileType::PillbugBody(_) => 'O',
+            TileType::PillbugLegs(_) => 'w',
             TileType::Nutrient => '+',
         }
     }
@@ -67,9 +71,17 @@ impl TileType {
                 let fade = age as u16;
                 Color::Rgb((255 - fade).max(100) as u8, (200 - fade / 2).max(50) as u8, (255 - fade).max(100) as u8) // Pink-white flowers
             },
-            TileType::Pillbug(age) => {
-                let intensity = (255 - age as u16).max(50) as u8;
-                Color::Rgb(intensity, intensity, intensity)
+            TileType::PillbugHead(age) => {
+                let intensity = (180 - age as u16).max(60) as u8;
+                Color::Rgb(intensity + 20, intensity, intensity - 10) // Slightly reddish head
+            },
+            TileType::PillbugBody(age) => {
+                let intensity = (180 - age as u16).max(50) as u8;
+                Color::Rgb(intensity, intensity, intensity) // Gray body
+            },
+            TileType::PillbugLegs(age) => {
+                let intensity = (180 - age as u16).max(40) as u8;
+                Color::Rgb(intensity - 20, intensity - 10, intensity) // Slightly bluish legs
             },
             TileType::Nutrient => Color::Magenta,
         }
@@ -81,6 +93,17 @@ impl TileType {
     
     fn is_plant_structural(self) -> bool {
         matches!(self, TileType::PlantStem(_))
+    }
+    
+    fn is_pillbug(self) -> bool {
+        matches!(self, TileType::PillbugHead(_) | TileType::PillbugBody(_) | TileType::PillbugLegs(_))
+    }
+    
+    fn pillbug_age(self) -> Option<u8> {
+        match self {
+            TileType::PillbugHead(age) | TileType::PillbugBody(age) | TileType::PillbugLegs(age) => Some(age),
+            _ => None,
+        }
     }
 }
 
@@ -160,10 +183,36 @@ impl World {
             }
         }
         
+        // Generate initial multi-segment pillbugs
         for _ in 0..(self.width / 30) {
-            let x = rng.gen_range(0..self.width);
+            let x = rng.gen_range(1..self.width - 1);
             let y = rng.gen_range(self.height - 10..self.height);
-            self.tiles[y][x] = TileType::Pillbug(rng.gen_range(10..50));
+            let age = rng.gen_range(10..50);
+            
+            // Create a 3-segment pillbug: head, body, legs
+            if self.tiles[y][x] == TileType::Empty {
+                self.tiles[y][x] = TileType::PillbugHead(age);
+                
+                // Try to place body behind head
+                let directions = [(-1, 0), (1, 0), (0, 1), (0, -1)];
+                if let Some(&(dx, dy)) = directions.choose(&mut rng) {
+                    let body_x = (x as i32 + dx) as usize;
+                    let body_y = (y as i32 + dy) as usize;
+                    if body_x < self.width && body_y < self.height && self.tiles[body_y][body_x] == TileType::Empty {
+                        self.tiles[body_y][body_x] = TileType::PillbugBody(age);
+                        
+                        // Try to place legs adjacent to body
+                        let leg_directions = [(-1, 0), (1, 0), (0, 1), (0, -1)];
+                        if let Some(&(ldx, ldy)) = leg_directions.choose(&mut rng) {
+                            let legs_x = (body_x as i32 + ldx) as usize;
+                            let legs_y = (body_y as i32 + ldy) as usize;
+                            if legs_x < self.width && legs_y < self.height && self.tiles[legs_y][legs_x] == TileType::Empty {
+                                self.tiles[legs_y][legs_x] = TileType::PillbugLegs(age);
+                            }
+                        }
+                    }
+                }
+            }
         }
         
         // Add some initial nutrients
@@ -235,49 +284,9 @@ impl World {
                     tile if tile.is_plant() => {
                         self.update_plant_physics(x, y, &mut new_tiles, tile);
                     }
-                    TileType::Pillbug(_) => {
-                        if y + 1 < self.height {
-                            // Check all 8 adjacent positions for support
-                            let mut has_support = false;
-                            for dy in -1..=1 {
-                                for dx in -1..=1 {
-                                    if dx == 0 && dy == 0 { continue; } // Skip self
-                                    let nx = (x as i32 + dx) as usize;
-                                    let ny = (y as i32 + dy) as usize;
-                                    if nx < self.width && ny < self.height {
-                                        let neighbor = self.tiles[ny][nx];
-                                        // Any solid tile provides support (not empty, not water, not nutrients)
-                                        if neighbor != TileType::Empty && neighbor != TileType::Water && neighbor != TileType::Nutrient {
-                                            has_support = true;
-                                            break;
-                                        }
-                                    }
-                                }
-                                if has_support { break; }
-                            }
-                            
-                            // Fall if no support
-                            if !has_support {
-                                let below = self.tiles[y + 1][x];
-                                if below == TileType::Empty || below == TileType::Water {
-                                    new_tiles[y][x] = TileType::Empty;
-                                    new_tiles[y + 1][x] = self.tiles[y][x];
-                                    // If falling into water, water gets displaced
-                                    if below == TileType::Water {
-                                        // Try to move water to a nearby empty space
-                                        let mut rng = rand::thread_rng();
-                                        let directions = [(-1, 0), (1, 0), (0, -1)];
-                                        if let Some(&(dx, dy)) = directions.choose(&mut rng) {
-                                            let nx = (x as i32 + dx) as usize;
-                                            let ny = ((y + 1) as i32 + dy) as usize;
-                                            if nx < self.width && ny < self.height && self.tiles[ny][nx] == TileType::Empty {
-                                                new_tiles[ny][nx] = TileType::Water;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    // Pillbug segments affected by gravity when not supported
+                    tile if tile.is_pillbug() => {
+                        self.update_pillbug_physics(x, y, &mut new_tiles, tile);
                     }
                     _ => {}
                 }
@@ -312,6 +321,51 @@ impl World {
             }
             
             // Fall if no support, but stems are more stable
+            if !has_support {
+                let below = self.tiles[y + 1][x];
+                if below == TileType::Empty || below == TileType::Water {
+                    new_tiles[y][x] = TileType::Empty;
+                    new_tiles[y + 1][x] = tile;
+                    // If falling into water, water gets displaced
+                    if below == TileType::Water {
+                        // Try to move water to a nearby empty space
+                        let mut rng = rand::thread_rng();
+                        let directions = [(-1, 0), (1, 0), (0, -1)];
+                        if let Some(&(dx, dy)) = directions.choose(&mut rng) {
+                            let nx = (x as i32 + dx) as usize;
+                            let ny = ((y + 1) as i32 + dy) as usize;
+                            if nx < self.width && ny < self.height && self.tiles[ny][nx] == TileType::Empty {
+                                new_tiles[ny][nx] = TileType::Water;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    fn update_pillbug_physics(&self, x: usize, y: usize, new_tiles: &mut Vec<Vec<TileType>>, tile: TileType) {
+        if y + 1 < self.height {
+            // Check all 8 adjacent positions for support
+            let mut has_support = false;
+            for dy in -1..=1 {
+                for dx in -1..=1 {
+                    if dx == 0 && dy == 0 { continue; } // Skip self
+                    let nx = (x as i32 + dx) as usize;
+                    let ny = (y as i32 + dy) as usize;
+                    if nx < self.width && ny < self.height {
+                        let neighbor = self.tiles[ny][nx];
+                        // Any solid tile provides support (not empty, not water, not nutrients)
+                        if neighbor != TileType::Empty && neighbor != TileType::Water && neighbor != TileType::Nutrient {
+                            has_support = true;
+                            break;
+                        }
+                    }
+                }
+                if has_support { break; }
+            }
+            
+            // Fall if no support
             if !has_support {
                 let below = self.tiles[y + 1][x];
                 if below == TileType::Empty || below == TileType::Water {
@@ -383,72 +437,15 @@ impl World {
                     TileType::PlantFlower(age) => {
                         self.update_plant_flower(x, y, age, &mut new_tiles, &mut rng);
                     }
-                    TileType::Pillbug(age) => {
-                        let mut new_age = age.saturating_add(1);
-                        let mut should_reproduce = false;
-                        
-                        // Pillbugs age and may die
-                        if new_age >= 180 {
-                            // Pillbug dies and decomposes into nutrients
-                            new_tiles[y][x] = TileType::Nutrient;
-                            continue;
-                        }
-                        
-                        // Pillbugs eat plant parts for nutrients (prefer leaves and flowers)
-                        let mut found_food = false;
-                        for dy in -1..=1 {
-                            for dx in -1..=1 {
-                                let nx = (x as i32 + dx) as usize;
-                                let ny = (y as i32 + dy) as usize;
-                                if nx < self.width && ny < self.height {
-                                    let tile = self.tiles[ny][nx];
-                                    if tile.is_plant() {
-                                        let eat_chance = match tile {
-                                            TileType::PlantLeaf(_) => 0.15,     // Prefer leaves
-                                            TileType::PlantFlower(_) => 0.12,   // Like flowers
-                                            TileType::PlantBud(_) => 0.08,      // Eat buds sometimes
-                                            TileType::PlantStem(_) => 0.03,     // Rarely eat stems
-                                            _ => 0.0,
-                                        };
-                                        if rng.gen_bool(eat_chance) {
-                                            new_tiles[ny][nx] = TileType::Nutrient; // Plant part becomes nutrient
-                                            new_age = new_age.saturating_sub(10); // Food slows aging significantly
-                                            found_food = true;
-                                            should_reproduce = rng.gen_bool(0.03);
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                            if found_food { break; }
-                        }
-                        
-                        // Without food, age faster (starve)
-                        if !found_food {
-                            new_age = new_age.saturating_add(2);
-                        }
-                        
-                        // Movement
-                        if rng.gen_bool(0.15) {
-                            let directions = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)];
-                            if let Some(&(dx, dy)) = directions.choose(&mut rng) {
-                                let nx = (x as i32 + dx) as usize;
-                                let ny = (y as i32 + dy) as usize;
-                                if nx < self.width && ny < self.height && new_tiles[ny][nx] == TileType::Empty {
-                                    new_tiles[y][x] = TileType::Empty;
-                                    new_tiles[ny][nx] = TileType::Pillbug(new_age);
-                                    
-                                    // Reproduction
-                                    if should_reproduce && rng.gen_bool(0.5) {
-                                        new_tiles[y][x] = TileType::Pillbug(0); // Baby pillbug
-                                    }
-                                } else {
-                                    new_tiles[y][x] = TileType::Pillbug(new_age);
-                                }
-                            }
-                        } else {
-                            new_tiles[y][x] = TileType::Pillbug(new_age);
-                        }
+                    // Handle pillbug segments
+                    TileType::PillbugHead(age) => {
+                        self.update_pillbug_head(x, y, age, &mut new_tiles, &mut rng);
+                    }
+                    TileType::PillbugBody(age) => {
+                        self.update_pillbug_body(x, y, age, &mut new_tiles, &mut rng);
+                    }
+                    TileType::PillbugLegs(age) => {
+                        self.update_pillbug_legs(x, y, age, &mut new_tiles, &mut rng);
                     }
                     _ => {}
                 }
@@ -596,6 +593,136 @@ impl World {
         }
         
         new_tiles[y][x] = TileType::PlantFlower(new_age);
+    }
+    
+    fn update_pillbug_head(&self, x: usize, y: usize, age: u8, new_tiles: &mut Vec<Vec<TileType>>, rng: &mut impl Rng) {
+        let mut new_age = age.saturating_add(1);
+        
+        // Pillbug head dies after 180 ticks
+        if new_age >= 180 {
+            new_tiles[y][x] = TileType::Nutrient;
+            return;
+        }
+        
+        // Head is responsible for eating - look for plant parts nearby
+        let mut found_food = false;
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                let nx = (x as i32 + dx) as usize;
+                let ny = (y as i32 + dy) as usize;
+                if nx < self.width && ny < self.height {
+                    let tile = self.tiles[ny][nx];
+                    if tile.is_plant() {
+                        let eat_chance = match tile {
+                            TileType::PlantLeaf(_) => 0.15,     // Prefer leaves
+                            TileType::PlantFlower(_) => 0.12,   // Like flowers
+                            TileType::PlantBud(_) => 0.08,      // Eat buds sometimes
+                            TileType::PlantStem(_) => 0.03,     // Rarely eat stems
+                            _ => 0.0,
+                        };
+                        if rng.gen_bool(eat_chance) {
+                            new_tiles[ny][nx] = TileType::Nutrient; // Plant part becomes nutrient
+                            new_age = new_age.saturating_sub(10); // Food slows aging significantly
+                            found_food = true;
+                            
+                            // When head finds food, try to reproduce by spawning a new pillbug nearby
+                            if rng.gen_bool(0.03) {
+                                self.try_spawn_pillbug(x, y, new_tiles, rng);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            if found_food { break; }
+        }
+        
+        // Without food, age faster (starve)
+        if !found_food {
+            new_age = new_age.saturating_add(2);
+        }
+        
+        // Head coordinates movement for the whole pillbug
+        if rng.gen_bool(0.08) { // Reduced movement rate for coordinated movement
+            self.try_move_pillbug(x, y, new_age, new_tiles, rng);
+        } else {
+            new_tiles[y][x] = TileType::PillbugHead(new_age);
+        }
+    }
+    
+    fn update_pillbug_body(&self, x: usize, y: usize, age: u8, new_tiles: &mut Vec<Vec<TileType>>, _rng: &mut impl Rng) {
+        let new_age = age.saturating_add(1);
+        
+        // Pillbug body dies after 180 ticks
+        if new_age >= 180 {
+            new_tiles[y][x] = TileType::Nutrient;
+            return;
+        }
+        
+        new_tiles[y][x] = TileType::PillbugBody(new_age);
+    }
+    
+    fn update_pillbug_legs(&self, x: usize, y: usize, age: u8, new_tiles: &mut Vec<Vec<TileType>>, _rng: &mut impl Rng) {
+        let new_age = age.saturating_add(1);
+        
+        // Pillbug legs die after 180 ticks
+        if new_age >= 180 {
+            new_tiles[y][x] = TileType::Nutrient;
+            return;
+        }
+        
+        new_tiles[y][x] = TileType::PillbugLegs(new_age);
+    }
+    
+    fn try_spawn_pillbug(&self, x: usize, y: usize, new_tiles: &mut Vec<Vec<TileType>>, rng: &mut impl Rng) {
+        let directions = [(-3, 0), (3, 0), (0, -3), (0, 3), (-2, -2), (2, 2), (-2, 2), (2, -2)];
+        if let Some(&(dx, dy)) = directions.choose(rng) {
+            let spawn_x = (x as i32 + dx) as usize;
+            let spawn_y = (y as i32 + dy) as usize;
+            
+            if spawn_x < self.width && spawn_y < self.height && 
+               new_tiles[spawn_y][spawn_x] == TileType::Empty {
+                // Create baby pillbug head, and try to create body/legs nearby
+                new_tiles[spawn_y][spawn_x] = TileType::PillbugHead(0);
+                
+                // Try to spawn body nearby
+                let body_dirs = [(-1, 0), (1, 0), (0, 1), (0, -1)];
+                if let Some(&(bdx, bdy)) = body_dirs.choose(rng) {
+                    let body_x = (spawn_x as i32 + bdx) as usize;
+                    let body_y = (spawn_y as i32 + bdy) as usize;
+                    if body_x < self.width && body_y < self.height && new_tiles[body_y][body_x] == TileType::Empty {
+                        new_tiles[body_y][body_x] = TileType::PillbugBody(0);
+                        
+                        // Try to spawn legs near body
+                        let leg_dirs = [(-1, 0), (1, 0), (0, 1), (0, -1)];
+                        if let Some(&(ldx, ldy)) = leg_dirs.choose(rng) {
+                            let legs_x = (body_x as i32 + ldx) as usize;
+                            let legs_y = (body_y as i32 + ldy) as usize;
+                            if legs_x < self.width && legs_y < self.height && new_tiles[legs_y][legs_x] == TileType::Empty {
+                                new_tiles[legs_y][legs_x] = TileType::PillbugLegs(0);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    fn try_move_pillbug(&self, x: usize, y: usize, age: u8, new_tiles: &mut Vec<Vec<TileType>>, rng: &mut impl Rng) {
+        // Simple movement for now - just move the head and let body/legs follow randomly
+        let directions = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)];
+        if let Some(&(dx, dy)) = directions.choose(rng) {
+            let nx = (x as i32 + dx) as usize;
+            let ny = (y as i32 + dy) as usize;
+            if nx < self.width && ny < self.height && new_tiles[ny][nx] == TileType::Empty {
+                new_tiles[y][x] = TileType::Empty;
+                new_tiles[ny][nx] = TileType::PillbugHead(age);
+            } else {
+                new_tiles[y][x] = TileType::PillbugHead(age);
+            }
+        } else {
+            new_tiles[y][x] = TileType::PillbugHead(age);
+        }
     }
     
     fn is_day(&self) -> bool {
@@ -762,12 +889,21 @@ fn ui(f: &mut Frame, app: &App) {
             Line::from("  - Buds: develop into stems/leaves/flowers"),
             Line::from("  - Flowers: spread seeds during day"),
             Line::from(vec![
-                Span::styled("B", Style::default().fg(Color::Gray)),
-                Span::raw(" = Pillbug (ages 0-180)")
+                Span::styled("@", Style::default().fg(Color::Rgb(140, 120, 110))),
+                Span::raw(" = Pillbug Head (ages 0-180)")
             ]),
-            Line::from("  - Eats plant parts (prefers leaves)"),
-            Line::from("  - Reproduces when fed"),
-            Line::from("  - Gets darker with age"),
+            Line::from(vec![
+                Span::styled("O", Style::default().fg(Color::Gray)),
+                Span::raw(" = Pillbug Body (ages 0-180)")
+            ]),
+            Line::from(vec![
+                Span::styled("w", Style::default().fg(Color::Rgb(110, 120, 140))),
+                Span::raw(" = Pillbug Legs (ages 0-180)")
+            ]),
+            Line::from("  - Multi-segment creatures"),
+            Line::from("  - Head eats plants (prefers leaves)"),
+            Line::from("  - Reproduce when head finds food"),
+            Line::from("  - Get darker with age"),
             Line::from(vec![
                 Span::styled("+", Style::default().fg(Color::Magenta)),
                 Span::raw(" = Nutrient (diffuses)")
