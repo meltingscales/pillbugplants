@@ -16,6 +16,7 @@ use std::io;
 use std::env;
 use std::fs::File;
 use std::io::Write;
+use std::fmt;
 
 
 #[derive(Clone, Copy, PartialEq)]
@@ -239,19 +240,6 @@ impl World {
         world
     }
     
-    fn to_string(&self) -> String {
-        let mut result = String::new();
-        for y in 0..self.height {
-            for x in 0..self.width {
-                result.push(self.tiles[y][x].to_char());
-            }
-            result.push('\n');
-        }
-        result.push_str(&format!("Tick: {}\n", self.tick));
-        result.push_str(&format!("Day/Night: {}\n", if self.is_day() { "Day" } else { "Night" }));
-        result.push_str(&format!("Rain intensity: {:.2}\n", self.rain_intensity));
-        result
-    }
     
     fn generate_initial_world(&mut self) {
         let mut rng = rand::thread_rng();
@@ -419,7 +407,7 @@ impl World {
         self.tiles = new_tiles;
     }
     
-    fn update_plant_physics(&self, x: usize, y: usize, new_tiles: &mut Vec<Vec<TileType>>, tile: TileType) {
+    fn update_plant_physics(&self, x: usize, y: usize, new_tiles: &mut [Vec<TileType>], tile: TileType) {
         if y + 1 < self.height {
             // Check all 8 adjacent positions for support
             let mut has_support = false;
@@ -467,7 +455,7 @@ impl World {
         }
     }
     
-    fn update_pillbug_physics(&self, x: usize, y: usize, new_tiles: &mut Vec<Vec<TileType>>, tile: TileType) {
+    fn update_pillbug_physics(&self, x: usize, y: usize, new_tiles: &mut [Vec<TileType>], tile: TileType) {
         if y + 1 < self.height {
             // Check all 8 adjacent positions for support
             let mut has_support = false;
@@ -578,7 +566,7 @@ impl World {
         self.tiles = new_tiles;
     }
     
-    fn update_plant_stem(&self, x: usize, y: usize, age: u8, size: Size, new_tiles: &mut Vec<Vec<TileType>>, rng: &mut impl Rng) {
+    fn update_plant_stem(&self, x: usize, y: usize, age: u8, size: Size, new_tiles: &mut [Vec<TileType>], rng: &mut impl Rng) {
         let aging_rate = (1.0 / size.lifespan_multiplier()) as u8;
         let mut new_age = age.saturating_add(aging_rate);
         
@@ -595,13 +583,12 @@ impl World {
             for dx in -1..=1 {
                 let nx = (x as i32 + dx) as usize;
                 let ny = (y as i32 + dy) as usize;
-                if nx < self.width && ny < self.height {
-                    if self.tiles[ny][nx] == TileType::Nutrient {
-                        new_tiles[ny][nx] = TileType::Empty;
-                        new_age = new_age.saturating_sub(3);
-                        found_nutrients = true;
-                        break;
-                    }
+                if nx < self.width && ny < self.height
+                    && self.tiles[ny][nx] == TileType::Nutrient {
+                    new_tiles[ny][nx] = TileType::Empty;
+                    new_age = new_age.saturating_sub(3);
+                    found_nutrients = true;
+                    break;
                 }
             }
             if found_nutrients { break; }
@@ -629,7 +616,7 @@ impl World {
         }
     }
     
-    fn update_plant_leaf(&self, x: usize, y: usize, age: u8, size: Size, new_tiles: &mut Vec<Vec<TileType>>, rng: &mut impl Rng) {
+    fn update_plant_leaf(&self, x: usize, y: usize, age: u8, size: Size, new_tiles: &mut [Vec<TileType>], rng: &mut impl Rng) {
         let aging_rate = (1.0 / size.lifespan_multiplier()) as u8;
         let mut new_age = age.saturating_add(aging_rate);
         
@@ -661,7 +648,7 @@ impl World {
         new_tiles[y][x] = TileType::PlantLeaf(new_age, size);
     }
     
-    fn update_plant_bud(&self, x: usize, y: usize, age: u8, size: Size, new_tiles: &mut Vec<Vec<TileType>>, rng: &mut impl Rng) {
+    fn update_plant_bud(&self, x: usize, y: usize, age: u8, size: Size, new_tiles: &mut [Vec<TileType>], rng: &mut impl Rng) {
         let aging_rate = (1.0 / size.lifespan_multiplier()) as u8;
         let new_age = age.saturating_add(aging_rate);
         
@@ -711,7 +698,7 @@ impl World {
         new_tiles[y][x] = TileType::PlantBud(new_age, size);
     }
     
-    fn update_plant_flower(&self, x: usize, y: usize, age: u8, size: Size, new_tiles: &mut Vec<Vec<TileType>>, rng: &mut impl Rng) {
+    fn update_plant_flower(&self, x: usize, y: usize, age: u8, size: Size, new_tiles: &mut [Vec<TileType>], rng: &mut impl Rng) {
         let aging_rate = (1.0 / size.lifespan_multiplier()) as u8;
         let new_age = age.saturating_add(aging_rate);
         
@@ -761,7 +748,7 @@ impl World {
         new_tiles[y][x] = TileType::PlantFlower(new_age, size);
     }
     
-    fn update_pillbug_head(&self, x: usize, y: usize, age: u8, size: Size, new_tiles: &mut Vec<Vec<TileType>>, rng: &mut impl Rng) {
+    fn update_pillbug_head(&self, x: usize, y: usize, age: u8, size: Size, new_tiles: &mut [Vec<TileType>], rng: &mut impl Rng) {
         let aging_rate = (1.0 / size.lifespan_multiplier()) as u8;
         let mut new_age = age.saturating_add(aging_rate);
         
@@ -846,7 +833,7 @@ impl World {
         }
     }
     
-    fn update_pillbug_body(&self, x: usize, y: usize, age: u8, size: Size, new_tiles: &mut Vec<Vec<TileType>>, _rng: &mut impl Rng) {
+    fn update_pillbug_body(&self, x: usize, y: usize, age: u8, size: Size, new_tiles: &mut [Vec<TileType>], _rng: &mut impl Rng) {
         let aging_rate = (1.0 / size.lifespan_multiplier()) as u8;
         let new_age = age.saturating_add(aging_rate);
         
@@ -860,7 +847,7 @@ impl World {
         new_tiles[y][x] = TileType::PillbugBody(new_age, size);
     }
     
-    fn update_pillbug_legs(&self, x: usize, y: usize, age: u8, size: Size, new_tiles: &mut Vec<Vec<TileType>>, _rng: &mut impl Rng) {
+    fn update_pillbug_legs(&self, x: usize, y: usize, age: u8, size: Size, new_tiles: &mut [Vec<TileType>], _rng: &mut impl Rng) {
         let aging_rate = (1.0 / size.lifespan_multiplier()) as u8;
         let new_age = age.saturating_add(aging_rate);
         
@@ -874,7 +861,7 @@ impl World {
         new_tiles[y][x] = TileType::PillbugLegs(new_age, size);
     }
     
-    fn try_spawn_pillbug(&self, x: usize, y: usize, parent_size: Size, new_tiles: &mut Vec<Vec<TileType>>, rng: &mut impl Rng) {
+    fn try_spawn_pillbug(&self, x: usize, y: usize, parent_size: Size, new_tiles: &mut [Vec<TileType>], rng: &mut impl Rng) {
         let directions = [(-3, 0), (3, 0), (0, -3), (0, 3), (-2, -2), (2, 2), (-2, 2), (2, -2)];
         if let Some(&(dx, dy)) = directions.choose(rng) {
             let spawn_x = (x as i32 + dx) as usize;
@@ -915,7 +902,7 @@ impl World {
         }
     }
     
-    fn try_move_pillbug(&self, x: usize, y: usize, age: u8, size: Size, new_tiles: &mut Vec<Vec<TileType>>, rng: &mut impl Rng) {
+    fn try_move_pillbug(&self, x: usize, y: usize, age: u8, size: Size, new_tiles: &mut [Vec<TileType>], rng: &mut impl Rng) {
         // Simple movement for now - just move the head and let body/legs follow randomly
         let directions = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)];
         if let Some(&(dx, dy)) = directions.choose(rng) {
@@ -934,6 +921,21 @@ impl World {
     
     fn is_day(&self) -> bool {
         self.day_cycle.sin() > 0.0
+    }
+}
+
+impl fmt::Display for World {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for y in 0..self.height {
+            for x in 0..self.width {
+                write!(f, "{}", self.tiles[y][x].to_char())?;
+            }
+            writeln!(f)?;
+        }
+        writeln!(f, "Tick: {}", self.tick)?;
+        writeln!(f, "Day/Night: {}", if self.is_day() { "Day" } else { "Night" })?;
+        writeln!(f, "Rain intensity: {:.2}", self.rain_intensity)?;
+        Ok(())
     }
 }
 
