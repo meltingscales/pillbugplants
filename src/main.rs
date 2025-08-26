@@ -1313,6 +1313,10 @@ impl World {
     }
     
     fn try_shed_plant_parts(&self, x: usize, y: usize, plant_size: Size, new_tiles: &mut [Vec<TileType>], rng: &mut impl Rng) {
+        // Enhanced shedding with seasonal effects
+        let season_factor = self.get_seasonal_shedding_factor();
+        let weather_stress = if self.rain_intensity > 0.5 { 1.2 } else { 1.0 };
+        
         // Look for plant parts attached to this stem that might fall off
         for dy in -2..=2 {
             for dx in -2..=2 {
@@ -1323,40 +1327,116 @@ impl World {
                     match self.tiles[ny][nx] {
                         TileType::PlantLeaf(leaf_age, leaf_size) if leaf_size == plant_size => {
                             // Older leaves more likely to fall, larger plants hold on better
-                            let drop_chance = match plant_size {
-                                Size::Small => 0.3,   // Small plants drop easily
-                                Size::Medium => 0.2,  // Medium stability 
-                                Size::Large => 0.1,   // Large plants hold parts better
+                            let base_drop_chance = match plant_size {
+                                Size::Small => 0.35,   // Small plants drop more easily
+                                Size::Medium => 0.25,  // Medium stability 
+                                Size::Large => 0.15,   // Large plants hold parts better
                             };
                             let age_factor = (leaf_age as f32 / 150.0).min(1.0); // 0.0 to 1.0
-                            let final_chance = drop_chance * (0.5 + age_factor); // Older = more likely to drop
+                            let stress_factor = if self.has_nearby_water(nx, ny, 1) { 0.7 } else { 1.0 }; // Water reduces stress
+                            let final_chance = base_drop_chance * (0.4 + age_factor * 0.6) * season_factor * weather_stress * stress_factor;
                             
                             if rng.gen_bool(final_chance as f64) {
                                 new_tiles[ny][nx] = TileType::PlantWithered(0, leaf_size);
+                                
+                                // Sometimes leaves scatter when they fall
+                                if rng.gen_bool(0.3) {
+                                    self.try_scatter_leaf(nx, ny, leaf_size, new_tiles, rng);
+                                }
                             }
                         },
                         TileType::PlantFlower(flower_age, flower_size) if flower_size == plant_size => {
-                            // Flowers drop more easily than leaves
-                            let drop_chance = match plant_size {
-                                Size::Small => 0.4,
-                                Size::Medium => 0.3,
-                                Size::Large => 0.2,
+                            // Flowers drop more easily than leaves and create seeds
+                            let base_drop_chance = match plant_size {
+                                Size::Small => 0.5,
+                                Size::Medium => 0.4,
+                                Size::Large => 0.3,
                             };
                             let age_factor = (flower_age as f32 / 100.0).min(1.0);
-                            let final_chance = drop_chance * (0.3 + age_factor);
+                            let final_chance = base_drop_chance * (0.2 + age_factor * 0.8) * season_factor * weather_stress;
                             
                             if rng.gen_bool(final_chance as f64) {
+                                // Mature flowers sometimes scatter seeds before withering
+                                if flower_age > 30 && rng.gen_bool(0.4) {
+                                    self.try_scatter_seeds(nx, ny, flower_size, new_tiles, rng);
+                                }
                                 new_tiles[ny][nx] = TileType::PlantWithered(0, flower_size);
                             }
                         },
-                        TileType::PlantBud(_, bud_size) if bud_size == plant_size => {
-                            // Buds occasionally fall off aging stems
-                            if rng.gen_bool(0.15) {
-                                new_tiles[ny][nx] = TileType::Empty; // Buds just disappear
+                        TileType::PlantBud(bud_age, bud_size) if bud_size == plant_size => {
+                            // Buds fall off more frequently during stress
+                            let drop_chance = 0.15 * season_factor * weather_stress;
+                            if rng.gen_bool(drop_chance as f64) {
+                                // Very young buds just disappear, older ones become withered
+                                if bud_age > 15 {
+                                    new_tiles[ny][nx] = TileType::PlantWithered(0, bud_size);
+                                } else {
+                                    new_tiles[ny][nx] = TileType::Empty;
+                                }
                             }
                         },
                         _ => {}
                     }
+                }
+            }
+        }
+    }
+    
+    fn get_seasonal_shedding_factor(&self) -> f32 {
+        // Create seasonal variation based on longer cycles
+        let seasonal_cycle = (self.tick as f32 * 0.001) % (2.0 * std::f32::consts::PI);
+        let season_effect = seasonal_cycle.sin();
+        
+        // Autumn-like conditions (negative sine) increase shedding
+        if season_effect < -0.3 {
+            1.0 + (-season_effect - 0.3) * 2.0 // Up to 3x shedding in deep "autumn"
+        } else {
+            1.0 // Normal shedding in spring/summer
+        }
+    }
+    
+    fn try_scatter_leaf(&self, x: usize, y: usize, leaf_size: Size, new_tiles: &mut [Vec<TileType>], rng: &mut impl Rng) {
+        // Scattered leaves can blow away from their original position
+        let scatter_directions = [(-1, 1), (0, 1), (1, 1), (-2, 1), (2, 1)];
+        if let Some(&(dx, dy)) = scatter_directions.choose(rng) {
+            let scatter_x = (x as i32 + dx) as usize;
+            let scatter_y = (y as i32 + dy) as usize;
+            if scatter_x < self.width && scatter_y < self.height && new_tiles[scatter_y][scatter_x] == TileType::Empty {
+                new_tiles[scatter_y][scatter_x] = TileType::PlantWithered(5, leaf_size); // Slightly aged
+            }
+        }
+    }
+    
+    fn try_scatter_seeds(&self, x: usize, y: usize, flower_size: Size, new_tiles: &mut [Vec<TileType>], rng: &mut impl Rng) {
+        // Seeds can travel farther than normal flower reproduction
+        let seed_range = match flower_size {
+            Size::Small => 2,
+            Size::Medium => 3,
+            Size::Large => 4,
+        };
+        
+        // Try to scatter 1-3 seeds
+        let seed_count = rng.gen_range(1..=3);
+        for _ in 0..seed_count {
+            let angle = rng.gen_range(0.0..2.0 * std::f32::consts::PI);
+            let distance = rng.gen_range(1..=seed_range) as f32;
+            let dx = (angle.cos() * distance) as i32;
+            let dy = (angle.sin() * distance) as i32;
+            
+            let seed_x = (x as i32 + dx) as usize;
+            let seed_y = (y as i32 + dy) as usize;
+            
+            if seed_x < self.width && seed_y < self.height && new_tiles[seed_y][seed_x] == TileType::Empty {
+                // Seeds need appropriate ground to germinate
+                if seed_y + 1 < self.height && 
+                   (self.tiles[seed_y + 1][seed_x] == TileType::Dirt || 
+                    self.tiles[seed_y + 1][seed_x] == TileType::Sand) {
+                    let seed_size = if rng.gen_bool(0.7) { 
+                        flower_size 
+                    } else { 
+                        random_size(rng) 
+                    };
+                    new_tiles[seed_y][seed_x] = TileType::PlantStem(0, seed_size);
                 }
             }
         }
