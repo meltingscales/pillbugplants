@@ -172,7 +172,7 @@ impl TileType {
                     Size::Large => 1.2,
                 };
                 let intensity = (base_intensity as f32 * size_boost).min(255.0) as u8;
-                Color::Rgb(intensity + 20, intensity, intensity - 10) // Slightly reddish head
+                Color::Rgb(intensity.saturating_add(20), intensity, intensity.saturating_sub(10)) // Slightly reddish head
             },
             TileType::PillbugBody(age, size) => {
                 let base_intensity = (180 - age as u16).max(50) as u8;
@@ -192,7 +192,7 @@ impl TileType {
                     Size::Large => 1.2,
                 };
                 let intensity = (base_intensity as f32 * size_boost).min(255.0) as u8;
-                Color::Rgb(intensity - 20, intensity - 10, intensity) // Slightly bluish legs
+                Color::Rgb(intensity.saturating_sub(20), intensity.saturating_sub(10), intensity) // Slightly bluish legs
             },
             TileType::PillbugDecaying(age, size) => {
                 let decay_progress = age as f32 / 20.0; // 0.0 = fresh decay, 1.0 = almost nutrient
