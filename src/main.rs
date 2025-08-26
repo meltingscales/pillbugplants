@@ -18,6 +18,15 @@ use std::fs::File;
 use std::io::Write;
 use std::fmt;
 
+#[derive(Debug, Clone)]
+enum MovementStrategy {
+    SeekFood((i32, i32)),    // Direction to food
+    Social((i32, i32)),      // Direction to other pillbugs
+    Avoid((i32, i32)),       // Direction away from danger
+    Explore,                 // Random exploration
+    Rest,                    // Stay put or minimal movement
+}
+
 
 #[derive(Clone, Copy, PartialEq)]
 enum Size {
@@ -1103,42 +1112,52 @@ impl World {
             }
         }
         
-        // Try to find food nearby and move toward it, otherwise random movement
-        let mut target_direction = None;
-        let mut best_food_distance = f32::INFINITY;
+        // Enhanced AI with multiple behavior patterns
+        let hunger_level = self.calculate_hunger_level(age, size);
+        let social_attraction = self.find_nearby_pillbugs(x, y, size);
+        let danger_avoidance = self.detect_environmental_dangers(x, y);
         
-        // Scan for food in a wider area
-        for scan_dy in -3..=3 {
-            for scan_dx in -3..=3 {
-                let scan_x = (x as i32 + scan_dx) as usize;
-                let scan_y = (y as i32 + scan_dy) as usize;
-                if scan_x < self.width && scan_y < self.height {
-                    let tile = self.tiles[scan_y][scan_x];
-                    if tile.is_plant() {
-                        let distance = ((scan_dx as f32).powi(2) + (scan_dy as f32).powi(2)).sqrt();
-                        if distance < best_food_distance && distance > 0.0 {
-                            best_food_distance = distance;
-                            // Calculate direction toward food
-                            let dx_norm = if scan_dx > 0 { 1 } else if scan_dx < 0 { -1 } else { 0 };
-                            let dy_norm = if scan_dy > 0 { 1 } else if scan_dy < 0 { -1 } else { 0 };
-                            target_direction = Some((dx_norm, dy_norm));
-                        }
-                    }
+        let movement_decision = self.decide_movement_strategy(
+            x, y, size, hunger_level, social_attraction, danger_avoidance, rng
+        );
+        
+        let directions = match movement_decision {
+            MovementStrategy::SeekFood(target_dir) => {
+                // Focused food seeking with some randomness
+                let (tx, ty) = target_dir;
+                vec![target_dir, (tx, ty), (tx-1, ty), (tx+1, ty), (tx, ty-1), (tx, ty+1)]
+                    .into_iter()
+                    .filter(|&(dx, dy)| dx >= -1 && dx <= 1 && dy >= -1 && dy <= 1 && (dx != 0 || dy != 0))
+                    .collect::<Vec<_>>()
+            }
+            MovementStrategy::Social(social_dir) => {
+                // Move toward other pillbugs for social behavior
+                let (sx, sy) = social_dir;
+                vec![social_dir, (sx, sy), (sx-1, sy), (sx+1, sy)]
+                    .into_iter()
+                    .filter(|&(dx, dy)| dx >= -1 && dx <= 1 && dy >= -1 && dy <= 1 && (dx != 0 || dy != 0))
+                    .collect::<Vec<_>>()
+            }
+            MovementStrategy::Avoid(avoid_dir) => {
+                // Move away from danger
+                let (ax, ay) = avoid_dir;
+                vec![(-ax, -ay), (-ax, -ay+1), (-ax, -ay-1), (-ax+1, -ay), (-ax-1, -ay)]
+                    .into_iter()
+                    .filter(|&(dx, dy)| dx >= -1 && dx <= 1 && dy >= -1 && dy <= 1 && (dx != 0 || dy != 0))
+                    .collect::<Vec<_>>()
+            }
+            MovementStrategy::Explore => {
+                // Bias toward unexplored areas (prefer moving away from dense areas)
+                self.get_exploration_directions(x, y, rng)
+            }
+            MovementStrategy::Rest => {
+                // Very limited movement when resting
+                if rng.gen_bool(0.3) {
+                    vec![(-1, 0), (1, 0), (0, -1), (0, 1)]
+                } else {
+                    return; // Don't move at all
                 }
             }
-        }
-        
-        // Choose direction based on food detection or random
-        let directions = if let Some(target_dir) = target_direction {
-            // Prefer target direction but also include nearby directions for variety
-            let (tx, ty) = target_dir;
-            vec![target_dir, (tx-1, ty), (tx+1, ty), (tx, ty-1), (tx, ty+1)]
-                .into_iter()
-                .filter(|&(dx, dy)| dx >= -1 && dx <= 1 && dy >= -1 && dy <= 1 && (dx != 0 || dy != 0))
-                .collect::<Vec<_>>()
-        } else {
-            // Random movement when no food detected
-            vec![(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
         };
         
         if let Some(&(dx, dy)) = directions.choose(rng) {
@@ -1440,6 +1459,241 @@ impl World {
                 }
             }
         }
+    }
+    
+    fn calculate_hunger_level(&self, age: u8, size: Size) -> f32 {
+        // Hunger increases with age and varies by size
+        let base_hunger = age as f32 / 180.0; // 0.0 to 1.0
+        let size_multiplier = match size {
+            Size::Small => 0.8,   // Small bugs need less food
+            Size::Medium => 1.0,  // Normal hunger
+            Size::Large => 1.3,   // Large bugs get hungrier faster
+        };
+        (base_hunger * size_multiplier).min(1.0)
+    }
+    
+    fn find_nearby_pillbugs(&self, x: usize, y: usize, size: Size) -> Option<(i32, i32)> {
+        // Look for other pillbugs within social range
+        let social_range = match size {
+            Size::Small => 2,
+            Size::Medium => 3,
+            Size::Large => 4,
+        };
+        
+        let mut closest_pillbug = None;
+        let mut closest_distance = f32::INFINITY;
+        
+        for dy in -social_range..=social_range {
+            for dx in -social_range..=social_range {
+                if dx == 0 && dy == 0 { continue; }
+                let nx = (x as i32 + dx) as usize;
+                let ny = (y as i32 + dy) as usize;
+                if nx < self.width && ny < self.height {
+                    if let TileType::PillbugHead(_, other_size) = self.tiles[ny][nx] {
+                        if other_size == size { // Only attract to same-size pillbugs
+                            let distance = ((dx as f32).powi(2) + (dy as f32).powi(2)).sqrt();
+                            if distance < closest_distance {
+                                closest_distance = distance;
+                                let dx_norm = if dx > 0 { 1 } else if dx < 0 { -1 } else { 0 };
+                                let dy_norm = if dy > 0 { 1 } else if dy < 0 { -1 } else { 0 };
+                                closest_pillbug = Some((dx_norm, dy_norm));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        closest_pillbug
+    }
+    
+    fn detect_environmental_dangers(&self, x: usize, y: usize) -> Option<(i32, i32)> {
+        // Look for environmental hazards like deep water or unstable terrain
+        for dy in -2..=2 {
+            for dx in -2..=2 {
+                if dx == 0 && dy == 0 { continue; }
+                let nx = (x as i32 + dx) as usize;
+                let ny = (y as i32 + dy) as usize;
+                if nx < self.width && ny < self.height {
+                    match self.tiles[ny][nx] {
+                        TileType::Water => {
+                            // Check if it's a large body of water (dangerous)
+                            let water_count = self.count_adjacent_water(nx, ny);
+                            if water_count > 3 {
+                                let dx_norm = if dx > 0 { 1 } else if dx < 0 { -1 } else { 0 };
+                                let dy_norm = if dy > 0 { 1 } else if dy < 0 { -1 } else { 0 };
+                                return Some((dx_norm, dy_norm));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        None
+    }
+    
+    fn count_adjacent_water(&self, x: usize, y: usize) -> usize {
+        let mut count = 0;
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                let nx = (x as i32 + dx) as usize;
+                let ny = (y as i32 + dy) as usize;
+                if nx < self.width && ny < self.height {
+                    if self.tiles[ny][nx] == TileType::Water {
+                        count += 1;
+                    }
+                }
+            }
+        }
+        count
+    }
+    
+    fn decide_movement_strategy(
+        &self, 
+        x: usize, 
+        y: usize, 
+        size: Size, 
+        hunger_level: f32,
+        social_attraction: Option<(i32, i32)>,
+        danger_avoidance: Option<(i32, i32)>,
+        rng: &mut impl Rng
+    ) -> MovementStrategy {
+        // Priority system for decision making
+        
+        // Highest priority: avoid immediate danger
+        if let Some(danger_dir) = danger_avoidance {
+            return MovementStrategy::Avoid(danger_dir);
+        }
+        
+        // High priority: seek food when hungry
+        if hunger_level > 0.6 {
+            if let Some(food_dir) = self.scan_for_food(x, y, size) {
+                return MovementStrategy::SeekFood(food_dir);
+            }
+        }
+        
+        // Medium priority: social behavior when not too hungry
+        if hunger_level < 0.4 && social_attraction.is_some() && rng.gen_bool(0.4) {
+            return MovementStrategy::Social(social_attraction.unwrap());
+        }
+        
+        // Low hunger: look for food nearby
+        if hunger_level > 0.3 {
+            if let Some(food_dir) = self.scan_for_food(x, y, size) {
+                return MovementStrategy::SeekFood(food_dir);
+            }
+        }
+        
+        // Rest behavior for very young or very old pillbugs
+        if hunger_level < 0.2 && (hunger_level < 0.1 || rng.gen_bool(0.1)) {
+            return MovementStrategy::Rest;
+        }
+        
+        // Default: explore
+        MovementStrategy::Explore
+    }
+    
+    fn scan_for_food(&self, x: usize, y: usize, size: Size) -> Option<(i32, i32)> {
+        // Enhanced food detection with preferences
+        let scan_range = match size {
+            Size::Small => 3,
+            Size::Medium => 4,
+            Size::Large => 5,
+        };
+        
+        let mut best_food = None;
+        let mut best_score = f32::NEG_INFINITY;
+        
+        for dy in -scan_range..=scan_range {
+            for dx in -scan_range..=scan_range {
+                if dx == 0 && dy == 0 { continue; }
+                let nx = (x as i32 + dx) as usize;
+                let ny = (y as i32 + dy) as usize;
+                if nx < self.width && ny < self.height {
+                    let tile = self.tiles[ny][nx];
+                    if tile.is_plant() {
+                        let distance = ((dx as f32).powi(2) + (dy as f32).powi(2)).sqrt();
+                        let food_quality = self.evaluate_food_quality(tile, size);
+                        let score = food_quality / distance; // Higher quality, closer = better
+                        
+                        if score > best_score {
+                            best_score = score;
+                            let dx_norm = if dx > 0 { 1 } else if dx < 0 { -1 } else { 0 };
+                            let dy_norm = if dy > 0 { 1 } else if dy < 0 { -1 } else { 0 };
+                            best_food = Some((dx_norm, dy_norm));
+                        }
+                    }
+                }
+            }
+        }
+        
+        best_food
+    }
+    
+    fn evaluate_food_quality(&self, plant: TileType, pillbug_size: Size) -> f32 {
+        // Rate food quality based on plant type and pillbug size
+        let base_quality = match plant {
+            TileType::PlantLeaf(_, _) => 1.0,      // Good staple food
+            TileType::PlantFlower(_, _) => 0.8,    // Decent food
+            TileType::PlantBud(_, _) => 0.6,       // Okay food  
+            TileType::PlantStem(_, _) => 0.3,      // Hard to eat
+            TileType::PlantWithered(_, _) => 1.2,  // Easy to eat, preferred
+            _ => 0.0,
+        };
+        
+        // Size compatibility affects food quality
+        if let Some(plant_size) = plant.get_size() {
+            let size_compatibility = match (pillbug_size, plant_size) {
+                (Size::Large, Size::Small) => 1.3,   // Large bugs love small plants
+                (Size::Large, Size::Medium) => 1.1,
+                (Size::Large, Size::Large) => 0.9,
+                (Size::Medium, Size::Small) => 1.2,
+                (Size::Medium, Size::Medium) => 1.0,
+                (Size::Medium, Size::Large) => 0.7,
+                (Size::Small, Size::Small) => 1.0,
+                (Size::Small, Size::Medium) => 0.6,
+                (Size::Small, Size::Large) => 0.3,
+            };
+            base_quality * size_compatibility
+        } else {
+            base_quality
+        }
+    }
+    
+    fn get_exploration_directions(&self, x: usize, y: usize, rng: &mut impl Rng) -> Vec<(i32, i32)> {
+        // Prefer moving toward less crowded areas
+        let mut direction_scores = Vec::new();
+        
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                if dx == 0 && dy == 0 { continue; }
+                
+                // Count entities in direction to avoid crowded areas
+                let mut crowding_score = 0;
+                for check_range in 1..=3 {
+                    let check_x = (x as i32 + dx * check_range) as usize;
+                    let check_y = (y as i32 + dy * check_range) as usize;
+                    if check_x < self.width && check_y < self.height {
+                        match self.tiles[check_y][check_x] {
+                            TileType::Empty => crowding_score += 1,    // Prefer empty space
+                            TileType::Water => crowding_score -= 1,    // Avoid water
+                            TileType::Nutrient => crowding_score += 2, // Nutrients are good
+                            _ => {} // Neutral for other tiles
+                        }
+                    }
+                }
+                
+                direction_scores.push(((dx, dy), crowding_score));
+            }
+        }
+        
+        // Sort by score and return best directions
+        direction_scores.sort_by(|a, b| b.1.cmp(&a.1));
+        direction_scores.into_iter()
+            .take(4) // Take top 4 directions
+            .map(|(dir, _)| dir)
+            .collect()
     }
 }
 
