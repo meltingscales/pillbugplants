@@ -213,9 +213,6 @@ impl TileType {
         matches!(self, TileType::PlantStem(_, _) | TileType::PlantLeaf(_, _) | TileType::PlantBud(_, _) | TileType::PlantFlower(_, _) | TileType::PlantWithered(_, _))
     }
     
-    fn is_plant_structural(self) -> bool {
-        matches!(self, TileType::PlantStem(_, _))
-    }
     
     fn is_pillbug(self) -> bool {
         matches!(self, TileType::PillbugHead(_, _) | TileType::PillbugBody(_, _) | TileType::PillbugLegs(_, _) | TileType::PillbugDecaying(_, _))
@@ -435,8 +432,36 @@ impl World {
     
     fn update_plant_physics(&self, x: usize, y: usize, new_tiles: &mut [Vec<TileType>], tile: TileType) {
         if y + 1 < self.height {
-            // Check all 8 adjacent positions for support
-            let mut has_support = false;
+            // Different plant types have different support requirements
+            let (needs_strong_support, stability_threshold) = match tile {
+                TileType::PlantStem(_, size) => {
+                    // Stems need solid ground or other stems, stability varies by size
+                    let threshold = match size {
+                        Size::Large => 0.9,   // Large stems are more stable
+                        Size::Medium => 0.7,  // Medium stability
+                        Size::Small => 0.5,   // Small stems less stable
+                    };
+                    (true, threshold)
+                },
+                TileType::PlantLeaf(_, size) => {
+                    // Leaves need any plant connection, less stability needed
+                    let threshold = match size {
+                        Size::Large => 0.8,   // Large leaves more stable
+                        Size::Medium => 0.6,  
+                        Size::Small => 0.4,   // Small leaves fall easily
+                    };
+                    (false, threshold)
+                },
+                TileType::PlantBud(_, _) => (false, 0.3),  // Buds are fragile
+                TileType::PlantFlower(_, _) => (false, 0.4), // Flowers need some support
+                TileType::PlantWithered(_, _) => (false, 0.1), // Withered plants very unstable
+                _ => (false, 0.5),
+            };
+            
+            // Count support strength from adjacent tiles
+            let mut support_strength = 0.0;
+            let mut support_count = 0;
+            
             for dy in -1..=1 {
                 for dx in -1..=1 {
                     if dx == 0 && dy == 0 { continue; } // Skip self
@@ -444,20 +469,48 @@ impl World {
                     let ny = (y as i32 + dy) as usize;
                     if nx < self.width && ny < self.height {
                         let neighbor = self.tiles[ny][nx];
-                        // Plant stems provide strong support, dirt/sand provide support
-                        // Other plant parts provide weak support
-                        if neighbor == TileType::Dirt || neighbor == TileType::Sand || 
-                           neighbor.is_plant_structural() || 
-                           (neighbor.is_plant() && !matches!(tile, TileType::PlantStem(_, _))) {
-                            has_support = true;
-                            break;
+                        let support_value = match neighbor {
+                            TileType::Dirt | TileType::Sand => 1.0,  // Solid ground = full support
+                            TileType::PlantStem(_, neighbor_size) => {
+                                // Stem support strength varies by size
+                                match neighbor_size {
+                                    Size::Large => 0.9,
+                                    Size::Medium => 0.7,
+                                    Size::Small => 0.5,
+                                }
+                            },
+                            TileType::PlantLeaf(_, _) => 0.3,  // Leaves provide weak support
+                            TileType::PlantBud(_, _) => 0.1,   // Buds provide minimal support
+                            TileType::PlantFlower(_, _) => 0.2, // Flowers provide some support
+                            TileType::PlantWithered(_, _) => 0.05, // Withered plants very weak support
+                            _ => 0.0,
+                        };
+                        
+                        if support_value > 0.0 {
+                            support_strength += support_value;
+                            support_count += 1;
                         }
                     }
                 }
-                if has_support { break; }
             }
             
-            // Fall if no support, but stems are more stable
+            // Calculate average support strength
+            let avg_support = if support_count > 0 { 
+                support_strength / support_count as f32 
+            } else { 
+                0.0 
+            };
+            
+            // Check if support is sufficient
+            let has_support = if needs_strong_support {
+                // Stems need either solid ground or strong plant support
+                support_strength >= 1.0 || avg_support >= stability_threshold
+            } else {
+                // Other plants just need sufficient average support
+                avg_support >= stability_threshold
+            };
+            
+            // Fall if insufficient support
             if !has_support {
                 let below = self.tiles[y + 1][x];
                 if below == TileType::Empty || below == TileType::Water {
