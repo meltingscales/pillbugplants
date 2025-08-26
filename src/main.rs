@@ -21,8 +21,11 @@ enum TileType {
     Dirt,
     Sand,
     Water,
-    Plant(u8), // Age of plant (0-255, dies when reaching 255)
-    Pillbug(u8), // Age of pillbug (0-255, dies when reaching 255)
+    PlantStem(u8),   // Main structural support, age 0-255
+    PlantLeaf(u8),   // Photosynthesis organs, age 0-150
+    PlantBud(u8),    // Growth points that become branches/flowers, age 0-50
+    PlantFlower(u8), // Reproductive organs, age 0-100
+    Pillbug(u8),     // Age of pillbug (0-255, dies when reaching 255)
     Nutrient,
 }
 
@@ -33,9 +36,12 @@ impl TileType {
             TileType::Dirt => '#',
             TileType::Sand => '.',
             TileType::Water => '~',
-            TileType::Plant(_) => 'P',
+            TileType::PlantStem(_) => '|',
+            TileType::PlantLeaf(_) => 'L',
+            TileType::PlantBud(_) => 'o',
+            TileType::PlantFlower(_) => '*',
             TileType::Pillbug(_) => 'B',
-            TileType::Nutrient => '*',
+            TileType::Nutrient => '+',
         }
     }
     
@@ -45,9 +51,21 @@ impl TileType {
             TileType::Dirt => Color::Rgb(101, 67, 33),
             TileType::Sand => Color::Yellow,
             TileType::Water => Color::Blue,
-            TileType::Plant(age) => {
-                let intensity = (255 - age as u16).max(50) as u8;
-                Color::Rgb(0, intensity, 0)
+            TileType::PlantStem(age) => {
+                let intensity = (255 - age as u16).max(80) as u8;
+                Color::Rgb(intensity / 3, intensity, intensity / 4) // Brown-green stem
+            },
+            TileType::PlantLeaf(age) => {
+                let intensity = (150 - age as u16).max(60) as u8;
+                Color::Rgb(0, intensity, 0) // Green leaves
+            },
+            TileType::PlantBud(age) => {
+                let intensity = (50 - age as u16).max(120) as u8;
+                Color::Rgb(intensity, intensity / 2, 0) // Orange-ish buds
+            },
+            TileType::PlantFlower(age) => {
+                let fade = age as u16;
+                Color::Rgb((255 - fade).max(100) as u8, (200 - fade / 2).max(50) as u8, (255 - fade).max(100) as u8) // Pink-white flowers
             },
             TileType::Pillbug(age) => {
                 let intensity = (255 - age as u16).max(50) as u8;
@@ -55,6 +73,14 @@ impl TileType {
             },
             TileType::Nutrient => Color::Magenta,
         }
+    }
+    
+    fn is_plant(self) -> bool {
+        matches!(self, TileType::PlantStem(_) | TileType::PlantLeaf(_) | TileType::PlantBud(_) | TileType::PlantFlower(_))
+    }
+    
+    fn is_plant_structural(self) -> bool {
+        matches!(self, TileType::PlantStem(_))
     }
 }
 
@@ -106,10 +132,32 @@ impl World {
             self.tiles[y][x] = TileType::Water;
         }
         
-        for _ in 0..(self.width / 16) {
+        // Generate initial plant stems
+        for _ in 0..(self.width / 20) {
             let x = rng.gen_range(0..self.width);
-            let y = rng.gen_range(self.height - 15..self.height - 5);
-            self.tiles[y][x] = TileType::Plant(rng.gen_range(10..50));
+            let y = rng.gen_range(self.height - 12..self.height - 3);
+            
+            // Create a small initial plant with stem and maybe a leaf/bud
+            if self.tiles[y][x] == TileType::Empty {
+                self.tiles[y][x] = TileType::PlantStem(rng.gen_range(5..30));
+                
+                // 60% chance to add a leaf above stem
+                if y > 0 && self.tiles[y - 1][x] == TileType::Empty && rng.gen_bool(0.6) {
+                    self.tiles[y - 1][x] = TileType::PlantLeaf(rng.gen_range(0..20));
+                }
+                
+                // 30% chance to add a bud somewhere nearby
+                if rng.gen_bool(0.3) {
+                    let directions = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0)];
+                    if let Some(&(dx, dy)) = directions.choose(&mut rng) {
+                        let nx = (x as i32 + dx) as usize;
+                        let ny = (y as i32 + dy) as usize;
+                        if nx < self.width && ny < self.height && self.tiles[ny][nx] == TileType::Empty {
+                            self.tiles[ny][nx] = TileType::PlantBud(0);
+                        }
+                    }
+                }
+            }
         }
         
         for _ in 0..(self.width / 30) {
@@ -183,8 +231,11 @@ impl World {
                             }
                         }
                     }
-                    // Plants and pillbugs affected by gravity when not supported
-                    TileType::Plant(_) | TileType::Pillbug(_) => {
+                    // Plant parts and pillbugs affected by gravity when not supported  
+                    tile if tile.is_plant() => {
+                        self.update_plant_physics(x, y, &mut new_tiles, tile);
+                    }
+                    TileType::Pillbug(_) => {
                         if y + 1 < self.height {
                             // Check all 8 adjacent positions for support
                             let mut has_support = false;
@@ -236,6 +287,54 @@ impl World {
         self.tiles = new_tiles;
     }
     
+    fn update_plant_physics(&self, x: usize, y: usize, new_tiles: &mut Vec<Vec<TileType>>, tile: TileType) {
+        if y + 1 < self.height {
+            // Check all 8 adjacent positions for support
+            let mut has_support = false;
+            for dy in -1..=1 {
+                for dx in -1..=1 {
+                    if dx == 0 && dy == 0 { continue; } // Skip self
+                    let nx = (x as i32 + dx) as usize;
+                    let ny = (y as i32 + dy) as usize;
+                    if nx < self.width && ny < self.height {
+                        let neighbor = self.tiles[ny][nx];
+                        // Plant stems provide strong support, dirt/sand provide support
+                        // Other plant parts provide weak support
+                        if neighbor == TileType::Dirt || neighbor == TileType::Sand || 
+                           neighbor.is_plant_structural() || 
+                           (neighbor.is_plant() && !matches!(tile, TileType::PlantStem(_))) {
+                            has_support = true;
+                            break;
+                        }
+                    }
+                }
+                if has_support { break; }
+            }
+            
+            // Fall if no support, but stems are more stable
+            if !has_support {
+                let below = self.tiles[y + 1][x];
+                if below == TileType::Empty || below == TileType::Water {
+                    new_tiles[y][x] = TileType::Empty;
+                    new_tiles[y + 1][x] = tile;
+                    // If falling into water, water gets displaced
+                    if below == TileType::Water {
+                        // Try to move water to a nearby empty space
+                        let mut rng = rand::thread_rng();
+                        let directions = [(-1, 0), (1, 0), (0, -1)];
+                        if let Some(&(dx, dy)) = directions.choose(&mut rng) {
+                            let nx = (x as i32 + dx) as usize;
+                            let ny = ((y + 1) as i32 + dy) as usize;
+                            if nx < self.width && ny < self.height && self.tiles[ny][nx] == TileType::Empty {
+                                new_tiles[ny][nx] = TileType::Water;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     fn diffuse_nutrients(&mut self) {
         let mut new_tiles = self.tiles.clone();
         
@@ -268,54 +367,21 @@ impl World {
         for y in 0..self.height {
             for x in 0..self.width {
                 match self.tiles[y][x] {
-                    TileType::Plant(age) => {
-                        let mut new_age = age.saturating_add(1);
-                        let mut should_reproduce = false;
-                        
-                        // Plants age and may die
-                        if new_age >= 200 {
-                            // Plant dies and decomposes into nutrients
-                            new_tiles[y][x] = TileType::Nutrient;
-                            continue;
-                        }
-                        
-                        // Plants need nutrients to survive and reproduce
-                        let mut has_nutrients = false;
-                        for dy in -1..=1 {
-                            for dx in -1..=1 {
-                                let nx = (x as i32 + dx) as usize;
-                                let ny = (y as i32 + dy) as usize;
-                                if nx < self.width && ny < self.height {
-                                    if let TileType::Nutrient = self.tiles[ny][nx] {
-                                        has_nutrients = true;
-                                        new_tiles[ny][nx] = TileType::Empty; // Consume nutrient
-                                        new_age = new_age.saturating_sub(5); // Nutrients slow aging
-                                        should_reproduce = self.day_cycle.sin() > 0.0 && rng.gen_bool(0.05);
-                                        break;
-                                    }
-                                }
-                            }
-                            if has_nutrients { break; }
-                        }
-                        
-                        // Without nutrients, age faster
-                        if !has_nutrients {
-                            new_age = new_age.saturating_add(1);
-                        }
-                        
-                        new_tiles[y][x] = TileType::Plant(new_age);
-                        
-                        // Reproduction during day with nutrients
-                        if should_reproduce {
-                            let directions = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0)];
-                            if let Some(&(dx, dy)) = directions.choose(&mut rng) {
-                                let nx = (x as i32 + dx) as usize;
-                                let ny = (y as i32 + dy) as usize;
-                                if nx < self.width && ny < self.height && new_tiles[ny][nx] == TileType::Empty {
-                                    new_tiles[ny][nx] = TileType::Plant(0);
-                                }
-                            }
-                        }
+                    // Plant stem - main structural component
+                    TileType::PlantStem(age) => {
+                        self.update_plant_stem(x, y, age, &mut new_tiles, &mut rng);
+                    }
+                    // Plant leaf - photosynthesis
+                    TileType::PlantLeaf(age) => {
+                        self.update_plant_leaf(x, y, age, &mut new_tiles, &mut rng);
+                    }
+                    // Plant bud - growth point
+                    TileType::PlantBud(age) => {
+                        self.update_plant_bud(x, y, age, &mut new_tiles, &mut rng);
+                    }
+                    // Plant flower - reproduction
+                    TileType::PlantFlower(age) => {
+                        self.update_plant_flower(x, y, age, &mut new_tiles, &mut rng);
                     }
                     TileType::Pillbug(age) => {
                         let mut new_age = age.saturating_add(1);
@@ -328,16 +394,24 @@ impl World {
                             continue;
                         }
                         
-                        // Pillbugs eat plants for nutrients
+                        // Pillbugs eat plant parts for nutrients (prefer leaves and flowers)
                         let mut found_food = false;
                         for dy in -1..=1 {
                             for dx in -1..=1 {
                                 let nx = (x as i32 + dx) as usize;
                                 let ny = (y as i32 + dy) as usize;
                                 if nx < self.width && ny < self.height {
-                                    if let TileType::Plant(_) = self.tiles[ny][nx] {
-                                        if rng.gen_bool(0.1) { // 10% chance to eat plant
-                                            new_tiles[ny][nx] = TileType::Nutrient; // Plant becomes nutrient
+                                    let tile = self.tiles[ny][nx];
+                                    if tile.is_plant() {
+                                        let eat_chance = match tile {
+                                            TileType::PlantLeaf(_) => 0.15,     // Prefer leaves
+                                            TileType::PlantFlower(_) => 0.12,   // Like flowers
+                                            TileType::PlantBud(_) => 0.08,      // Eat buds sometimes
+                                            TileType::PlantStem(_) => 0.03,     // Rarely eat stems
+                                            _ => 0.0,
+                                        };
+                                        if rng.gen_bool(eat_chance) {
+                                            new_tiles[ny][nx] = TileType::Nutrient; // Plant part becomes nutrient
                                             new_age = new_age.saturating_sub(10); // Food slows aging significantly
                                             found_food = true;
                                             should_reproduce = rng.gen_bool(0.03);
@@ -382,6 +456,146 @@ impl World {
         }
         
         self.tiles = new_tiles;
+    }
+    
+    fn update_plant_stem(&self, x: usize, y: usize, age: u8, new_tiles: &mut Vec<Vec<TileType>>, rng: &mut impl Rng) {
+        let mut new_age = age.saturating_add(1);
+        
+        // Stems die after 255 ticks
+        if new_age >= 255 {
+            new_tiles[y][x] = TileType::Nutrient;
+            return;
+        }
+        
+        // Check for nutrients and consume them
+        let mut found_nutrients = false;
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                let nx = (x as i32 + dx) as usize;
+                let ny = (y as i32 + dy) as usize;
+                if nx < self.width && ny < self.height {
+                    if self.tiles[ny][nx] == TileType::Nutrient {
+                        new_tiles[ny][nx] = TileType::Empty;
+                        new_age = new_age.saturating_sub(3);
+                        found_nutrients = true;
+                        break;
+                    }
+                }
+            }
+            if found_nutrients { break; }
+        }
+        
+        new_tiles[y][x] = TileType::PlantStem(new_age);
+        
+        // Healthy stems can grow buds during the day
+        if found_nutrients && self.is_day() && new_age < 150 && rng.gen_bool(0.03) {
+            let directions = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0)];
+            if let Some(&(dx, dy)) = directions.choose(rng) {
+                let nx = (x as i32 + dx) as usize;
+                let ny = (y as i32 + dy) as usize;
+                if nx < self.width && ny < self.height && new_tiles[ny][nx] == TileType::Empty {
+                    new_tiles[ny][nx] = TileType::PlantBud(0);
+                }
+            }
+        }
+    }
+    
+    fn update_plant_leaf(&self, x: usize, y: usize, age: u8, new_tiles: &mut Vec<Vec<TileType>>, rng: &mut impl Rng) {
+        let mut new_age = age.saturating_add(1);
+        
+        // Leaves die after 150 ticks
+        if new_age >= 150 {
+            new_tiles[y][x] = TileType::Nutrient;
+            return;
+        }
+        
+        // Leaves photosynthesize during day (slow aging)
+        if self.is_day() {
+            new_age = new_age.saturating_sub(1);
+            
+            // Healthy leaves can sometimes produce nutrients during the day
+            if new_age < 100 && rng.gen_bool(0.02) {
+                let directions = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+                if let Some(&(dx, dy)) = directions.choose(rng) {
+                    let nx = (x as i32 + dx) as usize;
+                    let ny = (y as i32 + dy) as usize;
+                    if nx < self.width && ny < self.height && new_tiles[ny][nx] == TileType::Empty {
+                        new_tiles[ny][nx] = TileType::Nutrient;
+                    }
+                }
+            }
+        }
+        
+        new_tiles[y][x] = TileType::PlantLeaf(new_age);
+    }
+    
+    fn update_plant_bud(&self, x: usize, y: usize, age: u8, new_tiles: &mut Vec<Vec<TileType>>, rng: &mut impl Rng) {
+        let new_age = age.saturating_add(1);
+        
+        // Buds develop into other structures
+        if new_age >= 30 {
+            // 50% chance to become a stem, 30% flower, 20% leaf
+            let rand_val = rng.gen_range(0..10);
+            if rand_val < 5 {
+                new_tiles[y][x] = TileType::PlantStem(0);
+            } else if rand_val < 8 {
+                new_tiles[y][x] = TileType::PlantFlower(0);
+            } else {
+                new_tiles[y][x] = TileType::PlantLeaf(0);
+            }
+            return;
+        }
+        
+        // Buds die if they can't find support from stems
+        let mut has_stem_support = false;
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                let nx = (x as i32 + dx) as usize;
+                let ny = (y as i32 + dy) as usize;
+                if nx < self.width && ny < self.height {
+                    if let TileType::PlantStem(_) = self.tiles[ny][nx] {
+                        has_stem_support = true;
+                        break;
+                    }
+                }
+            }
+            if has_stem_support { break; }
+        }
+        
+        if !has_stem_support {
+            new_tiles[y][x] = TileType::Empty;
+            return;
+        }
+        
+        new_tiles[y][x] = TileType::PlantBud(new_age);
+    }
+    
+    fn update_plant_flower(&self, x: usize, y: usize, age: u8, new_tiles: &mut Vec<Vec<TileType>>, rng: &mut impl Rng) {
+        let new_age = age.saturating_add(1);
+        
+        // Flowers wither after 100 ticks
+        if new_age >= 100 {
+            new_tiles[y][x] = TileType::Nutrient;
+            return;
+        }
+        
+        // Flowers can spread seeds during the day
+        if self.is_day() && new_age > 20 && new_age < 80 && rng.gen_bool(0.02) {
+            let directions = [(-2, -1), (-1, -2), (0, -2), (1, -2), (2, -1), (2, 0), (1, 1), (0, 2), (-1, 1), (-2, 0)];
+            if let Some(&(dx, dy)) = directions.choose(rng) {
+                let nx = (x as i32 + dx) as usize;
+                let ny = (y as i32 + dy) as usize;
+                if nx < self.width && ny < self.height && new_tiles[ny][nx] == TileType::Empty {
+                    // Seeds need dirt/sand to grow
+                    if ny + 1 < self.height && 
+                       (self.tiles[ny + 1][nx] == TileType::Dirt || self.tiles[ny + 1][nx] == TileType::Sand) {
+                        new_tiles[ny][nx] = TileType::PlantStem(0);
+                    }
+                }
+            }
+        }
+        
+        new_tiles[y][x] = TileType::PlantFlower(new_age);
     }
     
     fn is_day(&self) -> bool {
@@ -528,21 +742,34 @@ fn ui(f: &mut Frame, app: &App) {
                 Span::raw(" = Water (flows)")
             ]),
             Line::from(vec![
-                Span::styled("P", Style::default().fg(Color::Green)),
-                Span::raw(" = Plant (ages 0-200)")
+                Span::styled("|", Style::default().fg(Color::Rgb(80, 200, 60))),
+                Span::raw(" = Plant Stem (structural)")
             ]),
-            Line::from("  - Needs nutrients"),
-            Line::from("  - Reproduces in day"),
-            Line::from("  - Gets darker with age"),
+            Line::from(vec![
+                Span::styled("L", Style::default().fg(Color::Green)),
+                Span::raw(" = Plant Leaf (photosynthesis)")
+            ]),
+            Line::from(vec![
+                Span::styled("o", Style::default().fg(Color::Rgb(200, 100, 0))),
+                Span::raw(" = Plant Bud (grows into parts)")
+            ]),
+            Line::from(vec![
+                Span::styled("*", Style::default().fg(Color::Rgb(255, 150, 200))),
+                Span::raw(" = Plant Flower (spreads seeds)")
+            ]),
+            Line::from("  - Stems: consume nutrients, grow buds"),
+            Line::from("  - Leaves: photosynthesize, produce nutrients"),
+            Line::from("  - Buds: develop into stems/leaves/flowers"),
+            Line::from("  - Flowers: spread seeds during day"),
             Line::from(vec![
                 Span::styled("B", Style::default().fg(Color::Gray)),
                 Span::raw(" = Pillbug (ages 0-180)")
             ]),
-            Line::from("  - Eats plants"),
+            Line::from("  - Eats plant parts (prefers leaves)"),
             Line::from("  - Reproduces when fed"),
             Line::from("  - Gets darker with age"),
             Line::from(vec![
-                Span::styled("*", Style::default().fg(Color::Magenta)),
+                Span::styled("+", Style::default().fg(Color::Magenta)),
                 Span::raw(" = Nutrient (diffuses)")
             ]),
             Line::from("  - From decomposition"),
