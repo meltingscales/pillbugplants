@@ -20,11 +20,11 @@
 - **Nutrient cycle**: Death → Nutrients → Plant consumption → Growth → Reproduction → Death
 - **Support physics**: Plants need structural support or they fall
 
-## High Priority TODO 🔥
-- [ ] **Fix compiler warnings** - remove unused `pillbug_age` and `get_age` methods
-- [ ] **Improve pillbug coordination** - body/legs should follow head movement better
-- [ ] **Enhanced plant withering** - gradual decomposition rather than instant death
-- [ ] **Better plant physics** - more realistic attachment/falling for different plant parts
+## High Priority TODO 🔥 (COMPLETED!)
+- [x] **Fix compiler warnings** - ✅ Replaced inherent to_string with Display trait, fixed Vec parameters
+- [x] **Improve pillbug coordination** - ✅ Body/legs now follow head movement in coordinated chain
+- [x] **Enhanced plant withering** - ✅ Multi-stage decay: living → withered → nutrients
+- [x] **Better plant physics** - ✅ Size-based stability system with support strength calculations
 
 ## Medium Priority 📋  
 - [ ] **Water benefits** - plants near water should grow better

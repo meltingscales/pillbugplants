@@ -33,21 +33,31 @@
 - **Size inheritance**: Offspring inherit parent size with some variation
 - **Balanced ecosystem**: Size creates natural population dynamics
 
-### 🚧 Current Priority Issues  
-- **Compiler warnings**: Remove unused `pillbug_age` and `get_age` methods
-- **Pillbug coordination**: Body/legs should follow head movement in formation
-- **Plant physics**: Better attachment/falling logic for connected plant parts
-- **Gradual decomposition**: Multi-stage decay instead of instant death→nutrient
+### ✅ Recently Completed Priority Issues (2025-08-26)
+- **Compiler warnings**: ✅ Fixed all clippy warnings, implemented Display trait
+- **Pillbug coordination**: ✅ Body/legs now follow head in coordinated chain movement
+- **Plant physics**: ✅ Advanced stability system with size-based support calculations
+- **Gradual decomposition**: ✅ Multi-stage decay: PlantWithered, PillbugDecaying states
 
 ### 🎯 Next Development Priorities
 1. ✅ ~~Implement multi-segment plant bodies (stems, buds, leaves, flowers)~~
 2. ✅ ~~Add plant branching and bud development system~~  
 3. ✅ ~~Create multi-segment pillbug bodies (head, segments, legs)~~
 4. ✅ ~~Add size variations for organisms (small/medium/large)~~
-5. Fix compiler warnings and clean up unused code
-6. Improve pillbug multi-segment movement coordination  
-7. Enhance plant support/attachment physics
-8. Add gradual withering/decay stages
+5. ✅ ~~Fix compiler warnings and clean up unused code~~
+6. ✅ ~~Improve pillbug multi-segment movement coordination~~
+7. ✅ ~~Enhance plant support/attachment physics~~
+8. ✅ ~~Add gradual withering/decay stages~~
+
+**ALL HIGH PRIORITY ITEMS COMPLETED! 🎉**
+
+### 🆕 Latest Features Added (2025-08-26 Session)
+- **Enhanced Code Quality**: All clippy warnings fixed, Display trait implemented
+- **Coordinated Movement**: Pillbug body segments follow head in formation  
+- **Multi-Stage Decay**: PlantWithered ('x') and PillbugDecaying ('░') intermediate states
+- **Advanced Physics**: Size-based stability with weighted support strength calculations
+- **Visual Improvements**: New decay characters and color gradients for aging
+- **Ecosystem Balance**: Withered plants easier for pillbugs to eat, creating natural cleanup
 
 ## Technical Architecture
 
