@@ -267,24 +267,58 @@ impl World {
     fn generate_initial_world(&mut self) {
         let mut rng = rand::thread_rng();
         
-        for y in self.height - 10..self.height {
-            for x in 0..self.width {
-                if rng.gen_bool(0.8) {
+        // Generate terrain with hills and valleys using sine waves
+        let base_ground_level = self.height - 8;
+        let terrain_frequency = 0.1; // Controls hill/valley frequency
+        let terrain_amplitude = 4; // Controls hill/valley height
+        
+        for x in 0..self.width {
+            let terrain_offset = (terrain_amplitude as f32 * ((x as f32 * terrain_frequency).sin() + 
+                                                             0.5 * (x as f32 * terrain_frequency * 2.3).sin())) as i32;
+            let ground_level = base_ground_level as i32 + terrain_offset;
+            let ground_level = ground_level.max(self.height as i32 - 12).min(self.height as i32 - 3) as usize;
+            
+            // Fill from ground level to bottom with dirt
+            for y in ground_level..self.height {
+                if rng.gen_bool(0.85) {
                     self.tiles[y][x] = TileType::Dirt;
                 }
             }
         }
         
-        for _ in 0..(self.width / 2) {
+        // Add sand patches on hills (more exposed to weathering)
+        for _ in 0..(self.width / 3) {
             let x = rng.gen_range(0..self.width);
-            let y = rng.gen_range(self.height - 8..self.height);
-            self.tiles[y][x] = TileType::Sand;
+            // Find the ground level at this x coordinate
+            let mut ground_y = self.height - 1;
+            for y in 0..self.height {
+                if self.tiles[y][x] == TileType::Dirt {
+                    ground_y = y;
+                    break;
+                }
+            }
+            // Place sand near surface
+            let sand_depth = rng.gen_range(0..3);
+            if ground_y + sand_depth < self.height {
+                self.tiles[ground_y + sand_depth][x] = TileType::Sand;
+            }
         }
         
-        for _ in 0..(self.width / 4) {
+        // Add water in valleys (it flows downhill)
+        for _ in 0..(self.width / 5) {
             let x = rng.gen_range(0..self.width);
-            let y = rng.gen_range(self.height - 5..self.height);
-            self.tiles[y][x] = TileType::Water;
+            // Find the ground level at this x coordinate  
+            let mut ground_y = self.height - 1;
+            for y in 0..self.height {
+                if self.tiles[y][x] != TileType::Empty {
+                    ground_y = y;
+                    break;
+                }
+            }
+            // Place water at or near ground level
+            if ground_y > 0 && rng.gen_bool(0.7) {
+                self.tiles[ground_y - 1][x] = TileType::Water;
+            }
         }
         
         // Generate initial plant stems
@@ -1056,8 +1090,44 @@ impl World {
             }
         }
         
-        // Try to move head to a new position
-        let directions = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)];
+        // Try to find food nearby and move toward it, otherwise random movement
+        let mut target_direction = None;
+        let mut best_food_distance = f32::INFINITY;
+        
+        // Scan for food in a wider area
+        for scan_dy in -3..=3 {
+            for scan_dx in -3..=3 {
+                let scan_x = (x as i32 + scan_dx) as usize;
+                let scan_y = (y as i32 + scan_dy) as usize;
+                if scan_x < self.width && scan_y < self.height {
+                    let tile = self.tiles[scan_y][scan_x];
+                    if tile.is_plant() {
+                        let distance = ((scan_dx as f32).powi(2) + (scan_dy as f32).powi(2)).sqrt();
+                        if distance < best_food_distance && distance > 0.0 {
+                            best_food_distance = distance;
+                            // Calculate direction toward food
+                            let dx_norm = if scan_dx > 0 { 1 } else if scan_dx < 0 { -1 } else { 0 };
+                            let dy_norm = if scan_dy > 0 { 1 } else if scan_dy < 0 { -1 } else { 0 };
+                            target_direction = Some((dx_norm, dy_norm));
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Choose direction based on food detection or random
+        let directions = if let Some(target_dir) = target_direction {
+            // Prefer target direction but also include nearby directions for variety
+            let (tx, ty) = target_dir;
+            vec![target_dir, (tx-1, ty), (tx+1, ty), (tx, ty-1), (tx, ty+1)]
+                .into_iter()
+                .filter(|&(dx, dy)| dx >= -1 && dx <= 1 && dy >= -1 && dy <= 1 && (dx != 0 || dy != 0))
+                .collect::<Vec<_>>()
+        } else {
+            // Random movement when no food detected
+            vec![(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+        };
+        
         if let Some(&(dx, dy)) = directions.choose(rng) {
             let head_x = (x as i32 + dx) as usize;
             let head_y = (y as i32 + dy) as usize;
