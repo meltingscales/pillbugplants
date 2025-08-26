@@ -375,6 +375,7 @@ impl World {
         self.update_physics();
         self.diffuse_nutrients();
         self.update_life();
+        self.spawn_entities();
     }
     
     fn spawn_rain(&mut self) {
@@ -1101,6 +1102,93 @@ impl World {
             }
         } else {
             new_tiles[y][x] = TileType::PillbugHead(age, size);
+        }
+    }
+    
+    fn count_entities(&self) -> (usize, usize) {
+        let mut plant_count = 0;
+        let mut pillbug_count = 0;
+        
+        for y in 0..self.height {
+            for x in 0..self.width {
+                match self.tiles[y][x] {
+                    TileType::PlantStem(_, _) => plant_count += 1,
+                    TileType::PillbugHead(_, _) => pillbug_count += 1,
+                    _ => {}
+                }
+            }
+        }
+        
+        (plant_count, pillbug_count)
+    }
+    
+    fn spawn_entities(&mut self) {
+        let (plant_count, pillbug_count) = self.count_entities();
+        let mut rng = rand::thread_rng();
+        
+        // Spawn plants if under 3
+        if plant_count < 3 {
+            for _ in 0..(3 - plant_count) {
+                self.spawn_plant_at_top(&mut rng);
+            }
+        }
+        
+        // Spawn pillbugs if under 3
+        if pillbug_count < 3 {
+            for _ in 0..(3 - pillbug_count) {
+                self.spawn_pillbug_at_top(&mut rng);
+            }
+        }
+    }
+    
+    fn spawn_plant_at_top(&mut self, rng: &mut impl Rng) {
+        // Try to find an empty spot at the top of the world
+        for _ in 0..50 { // Limit attempts to avoid infinite loop
+            let x = rng.gen_range(0..self.width);
+            let y = rng.gen_range(0..5); // Top 5 rows
+            
+            if self.tiles[y][x] == TileType::Empty {
+                let plant_size = random_size(rng);
+                self.tiles[y][x] = TileType::PlantStem(rng.gen_range(5..30), plant_size);
+                return;
+            }
+        }
+    }
+    
+    fn spawn_pillbug_at_top(&mut self, rng: &mut impl Rng) {
+        // Try to find an empty spot at the top of the world for the pillbug head
+        for _ in 0..50 { // Limit attempts to avoid infinite loop
+            let x = rng.gen_range(1..self.width - 1);
+            let y = rng.gen_range(0..5); // Top 5 rows
+            
+            if self.tiles[y][x] == TileType::Empty {
+                let pillbug_size = random_size(rng);
+                let age = rng.gen_range(10..50);
+                
+                // Create pillbug head
+                self.tiles[y][x] = TileType::PillbugHead(age, pillbug_size);
+                
+                // Try to place body nearby
+                let directions = [(-1, 0), (1, 0), (0, 1), (0, -1)];
+                if let Some(&(dx, dy)) = directions.choose(rng) {
+                    let body_x = (x as i32 + dx) as usize;
+                    let body_y = (y as i32 + dy) as usize;
+                    if body_x < self.width && body_y < self.height && self.tiles[body_y][body_x] == TileType::Empty {
+                        self.tiles[body_y][body_x] = TileType::PillbugBody(age, pillbug_size);
+                        
+                        // Try to place legs adjacent to body
+                        let leg_directions = [(-1, 0), (1, 0), (0, 1), (0, -1)];
+                        if let Some(&(ldx, ldy)) = leg_directions.choose(rng) {
+                            let legs_x = (body_x as i32 + ldx) as usize;
+                            let legs_y = (body_y as i32 + ldy) as usize;
+                            if legs_x < self.width && legs_y < self.height && self.tiles[legs_y][legs_x] == TileType::Empty {
+                                self.tiles[legs_y][legs_x] = TileType::PillbugLegs(age, pillbug_size);
+                            }
+                        }
+                    }
+                }
+                return;
+            }
         }
     }
     
