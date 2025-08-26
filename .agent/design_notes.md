@@ -5,32 +5,37 @@
 ### ✅ Implemented Core Features
 - Basic ratatui terminal UI with dynamic world sizing
 - Physics simulation: gravity, falling sand/water, support checking
-- Tile-based world with dirt, sand, water, nutrients, plants, pillbugs
+- Tile-based world with dirt, sand, water, nutrients, multi-segment plants, pillbugs
 - Day/night cycle affecting plant reproduction and rain
+- **Multi-segment plant system** (NEW!):
+  - PlantStem (|): Structural support, consumes nutrients, grows buds
+  - PlantLeaf (L): Photosynthesis, produces nutrients during day
+  - PlantBud (o): Growth points that develop into stems/leaves/flowers
+  - PlantFlower (*): Reproduction, spreads seeds during day
 - Life systems:
-  - Plants age (0-200), consume nutrients, reproduce during day, decompose
-  - Pillbugs age (0-180), eat plants, move randomly, reproduce when fed
+  - Plants have specialized parts with different lifespans and behaviors
+  - Pillbugs age (0-180), eat plant parts (prefer leaves), move randomly, reproduce when fed
   - Nutrient diffusion and cycling
 - Rain system during night cycles
-- Taxonomy panel (toggle with 't' key)
-- 8-way support checking for living entities
+- Taxonomy panel (toggle with 't' key) with detailed plant part descriptions
+- 8-way support checking with structural plant support
 
 ### 🚧 Missing Priority Features
-- **Multi-segment body systems**: Plants and bugs should have body parts/segments
-- **Complex plant structures**: Buds, branches, flowers that can wither and fall off
-- **More sophisticated plant growth**: Branching patterns, different plant types
+- **Multi-segment pillbug bodies**: Pillbugs should have head, body segments, legs
+- **Size variations**: Different sized plants and bugs  
 - **Enhanced bug behavior**: More intelligent movement, group behavior
-- **Size variations**: Different sized plants and bugs
 - **More physics materials**: Maybe stone, organic matter types
 - **Seasonal cycles**: Beyond just day/night
 - **Better decomposition**: Gradual decay rather than instant nutrient conversion
+- **Plant diseases/wilting**: Environmental stress effects
 
 ### 🎯 Next Development Priorities
-1. Implement multi-segment plant bodies (stems, buds, leaves)
-2. Add plant branching and bud development system
-3. Create multi-segment pillbug bodies
-4. Add size variations for organisms
-5. Improve decomposition system with gradual decay
+1. ✅ ~~Implement multi-segment plant bodies (stems, buds, leaves, flowers)~~
+2. ✅ ~~Add plant branching and bud development system~~
+3. Create multi-segment pillbug bodies (head, segments, legs)
+4. Add size variations for organisms (small/medium/large)
+5. Improve decomposition system with gradual decay stages
+6. Add more sophisticated pillbug AI and group behaviors
 
 ## Technical Architecture
 

@@ -3,17 +3,17 @@
 ## High Priority - Core Systems Enhancement
 
 ### Multi-Segment Bodies
-- [ ] Design plant segment system (stem, bud, leaf, flower, branch)
-- [ ] Implement plant body structure with connected segments  
+- [x] ✅ Design plant segment system (stem, bud, leaf, flower)
+- [x] ✅ Implement plant body structure with connected segments  
 - [ ] Design pillbug segment system (head, body segments, legs)
 - [ ] Implement pillbug multi-segment bodies
 - [ ] Add size variations (small/medium/large organisms)
 
-### Advanced Plant Growth
-- [ ] Implement bud development system (bud → branch/flower)
-- [ ] Add plant branching patterns and growth rules
-- [ ] Create flower development and seed dispersal
-- [ ] Implement withering/falling mechanics for plant parts
+### Advanced Plant Growth  
+- [x] ✅ Implement bud development system (bud → stem/leaf/flower)
+- [x] ✅ Add plant branching patterns and growth rules
+- [x] ✅ Create flower development and seed dispersal
+- [x] ✅ Implement withering/falling mechanics for plant parts
 - [ ] Add different plant species with unique growth patterns
 
 ### Enhanced Physics & Decay
