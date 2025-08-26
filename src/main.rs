@@ -903,15 +903,87 @@ impl World {
     }
     
     fn try_move_pillbug(&self, x: usize, y: usize, age: u8, size: Size, new_tiles: &mut [Vec<TileType>], rng: &mut impl Rng) {
-        // Simple movement for now - just move the head and let body/legs follow randomly
+        // Find connected body parts nearby
+        let mut body_parts = Vec::new();
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                if dx == 0 && dy == 0 { continue; }
+                let nx = (x as i32 + dx) as usize;
+                let ny = (y as i32 + dy) as usize;
+                if nx < self.width && ny < self.height {
+                    match self.tiles[ny][nx] {
+                        TileType::PillbugBody(body_age, body_size) if body_size == size => {
+                            body_parts.push((nx, ny, TileType::PillbugBody(body_age, body_size)));
+                        }
+                        TileType::PillbugLegs(legs_age, legs_size) if legs_size == size => {
+                            body_parts.push((nx, ny, TileType::PillbugLegs(legs_age, legs_size)));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        
+        // Try to move head to a new position
         let directions = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)];
         if let Some(&(dx, dy)) = directions.choose(rng) {
-            let nx = (x as i32 + dx) as usize;
-            let ny = (y as i32 + dy) as usize;
-            if nx < self.width && ny < self.height && new_tiles[ny][nx] == TileType::Empty {
+            let head_x = (x as i32 + dx) as usize;
+            let head_y = (y as i32 + dy) as usize;
+            
+            if head_x < self.width && head_y < self.height && new_tiles[head_y][head_x] == TileType::Empty {
+                // Move head to new position
                 new_tiles[y][x] = TileType::Empty;
-                new_tiles[ny][nx] = TileType::PillbugHead(age, size);
+                new_tiles[head_y][head_x] = TileType::PillbugHead(age, size);
+                
+                // Try to move body parts to follow head in a chain
+                let mut previous_pos = (head_x, head_y);
+                
+                for (part_x, part_y, part_tile) in body_parts {
+                    // Find best position for this body part (close to previous position)
+                    let mut best_pos = None;
+                    let mut best_distance = f32::INFINITY;
+                    
+                    for check_dy in -1..=1 {
+                        for check_dx in -1..=1 {
+                            let check_x = (previous_pos.0 as i32 + check_dx) as usize;
+                            let check_y = (previous_pos.1 as i32 + check_dy) as usize;
+                            
+                            if check_x < self.width && check_y < self.height {
+                                let is_empty = if (check_x, check_y) == (part_x, part_y) {
+                                    true // Current position of part
+                                } else {
+                                    new_tiles[check_y][check_x] == TileType::Empty
+                                };
+                                
+                                if is_empty {
+                                    let distance = ((check_x as f32 - previous_pos.0 as f32).powi(2) + 
+                                                   (check_y as f32 - previous_pos.1 as f32).powi(2)).sqrt();
+                                    if distance < best_distance {
+                                        best_distance = distance;
+                                        best_pos = Some((check_x, check_y));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Move body part to best position if different from current
+                    if let Some((new_x, new_y)) = best_pos {
+                        if (new_x, new_y) != (part_x, part_y) {
+                            new_tiles[part_y][part_x] = TileType::Empty;
+                            new_tiles[new_y][new_x] = part_tile;
+                            previous_pos = (new_x, new_y);
+                        } else {
+                            // Keep part where it is
+                            previous_pos = (part_x, part_y);
+                        }
+                    } else {
+                        // Can't move part, keep it in place
+                        previous_pos = (part_x, part_y);
+                    }
+                }
             } else {
+                // Can't move head, keep all parts in place
                 new_tiles[y][x] = TileType::PillbugHead(age, size);
             }
         } else {
