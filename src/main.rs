@@ -74,9 +74,11 @@ enum TileType {
     PlantLeaf(u8, Size),   // Photosynthesis organs, age 0-150, size
     PlantBud(u8, Size),    // Growth points that become branches/flowers, age 0-50, size
     PlantFlower(u8, Size), // Reproductive organs, age 0-100, size
+    PlantWithered(u8, Size), // Dying plant part, age 0-30 before becoming nutrient, size
     PillbugHead(u8, Size),    // Head segment of pillbug, age 0-180, size
     PillbugBody(u8, Size),    // Body segment of pillbug, age 0-180, size
     PillbugLegs(u8, Size),    // Leg segment of pillbug, age 0-180, size
+    PillbugDecaying(u8, Size), // Dying pillbug part, age 0-20 before becoming nutrient, size
     Nutrient,
 }
 
@@ -91,9 +93,11 @@ impl TileType {
             TileType::PlantLeaf(_, size) => size.to_char_modifier('L'),
             TileType::PlantBud(_, size) => size.to_char_modifier('o'),
             TileType::PlantFlower(_, size) => size.to_char_modifier('*'),
+            TileType::PlantWithered(_, size) => size.to_char_modifier('x'), // Withered plants
             TileType::PillbugHead(_, size) => size.to_char_modifier('@'),
             TileType::PillbugBody(_, size) => size.to_char_modifier('O'),
             TileType::PillbugLegs(_, size) => size.to_char_modifier('w'),
+            TileType::PillbugDecaying(_, size) => size.to_char_modifier('░'), // Decaying pillbugs
             TileType::Nutrient => '+',
         }
     }
@@ -149,6 +153,17 @@ impl TileType {
                 let blue = (base_blue as f32 * size_boost).min(255.0) as u8;
                 Color::Rgb(red, green, blue) // Pink-white flowers
             },
+            TileType::PlantWithered(age, size) => {
+                let decay_progress = age as f32 / 30.0; // 0.0 = fresh withered, 1.0 = almost nutrient
+                let base_intensity = (100.0 * (1.0 - decay_progress * 0.6)) as u8; // Darken over time
+                let size_boost = match size {
+                    Size::Small => 0.8,
+                    Size::Medium => 1.0,
+                    Size::Large => 1.2,
+                };
+                let intensity = (base_intensity as f32 * size_boost).min(255.0) as u8;
+                Color::Rgb(intensity, intensity / 2, 0) // Brown withered color
+            },
             TileType::PillbugHead(age, size) => {
                 let base_intensity = (180 - age as u16).max(60) as u8;
                 let size_boost = match size {
@@ -179,12 +194,23 @@ impl TileType {
                 let intensity = (base_intensity as f32 * size_boost).min(255.0) as u8;
                 Color::Rgb(intensity - 20, intensity - 10, intensity) // Slightly bluish legs
             },
+            TileType::PillbugDecaying(age, size) => {
+                let decay_progress = age as f32 / 20.0; // 0.0 = fresh decay, 1.0 = almost nutrient
+                let base_intensity = (80.0 * (1.0 - decay_progress * 0.7)) as u8; // Darken significantly over time
+                let size_boost = match size {
+                    Size::Small => 0.7,
+                    Size::Medium => 1.0,
+                    Size::Large => 1.3,
+                };
+                let intensity = (base_intensity as f32 * size_boost).min(255.0) as u8;
+                Color::Rgb(intensity, intensity / 3, intensity / 2) // Dark brownish-red decay color
+            },
             TileType::Nutrient => Color::Magenta,
         }
     }
     
     fn is_plant(self) -> bool {
-        matches!(self, TileType::PlantStem(_, _) | TileType::PlantLeaf(_, _) | TileType::PlantBud(_, _) | TileType::PlantFlower(_, _))
+        matches!(self, TileType::PlantStem(_, _) | TileType::PlantLeaf(_, _) | TileType::PlantBud(_, _) | TileType::PlantFlower(_, _) | TileType::PlantWithered(_, _))
     }
     
     fn is_plant_structural(self) -> bool {
@@ -192,14 +218,14 @@ impl TileType {
     }
     
     fn is_pillbug(self) -> bool {
-        matches!(self, TileType::PillbugHead(_, _) | TileType::PillbugBody(_, _) | TileType::PillbugLegs(_, _))
+        matches!(self, TileType::PillbugHead(_, _) | TileType::PillbugBody(_, _) | TileType::PillbugLegs(_, _) | TileType::PillbugDecaying(_, _))
     }
     
     fn get_size(self) -> Option<Size> {
         match self {
             TileType::PlantStem(_, size) | TileType::PlantLeaf(_, size) | 
-            TileType::PlantBud(_, size) | TileType::PlantFlower(_, size) |
-            TileType::PillbugHead(_, size) | TileType::PillbugBody(_, size) | TileType::PillbugLegs(_, size) => Some(size),
+            TileType::PlantBud(_, size) | TileType::PlantFlower(_, size) | TileType::PlantWithered(_, size) |
+            TileType::PillbugHead(_, size) | TileType::PillbugBody(_, size) | TileType::PillbugLegs(_, size) | TileType::PillbugDecaying(_, size) => Some(size),
             _ => None,
         }
     }
@@ -548,6 +574,10 @@ impl World {
                     TileType::PlantFlower(age, size) => {
                         self.update_plant_flower(x, y, age, size, &mut new_tiles, &mut rng);
                     }
+                    // Plant withered - gradual decay
+                    TileType::PlantWithered(age, size) => {
+                        self.update_plant_withered(x, y, age, size, &mut new_tiles, &mut rng);
+                    }
                     // Handle pillbug segments
                     TileType::PillbugHead(age, size) => {
                         self.update_pillbug_head(x, y, age, size, &mut new_tiles, &mut rng);
@@ -557,6 +587,9 @@ impl World {
                     }
                     TileType::PillbugLegs(age, size) => {
                         self.update_pillbug_legs(x, y, age, size, &mut new_tiles, &mut rng);
+                    }
+                    TileType::PillbugDecaying(age, size) => {
+                        self.update_pillbug_decaying(x, y, age, size, &mut new_tiles, &mut rng);
                     }
                     _ => {}
                 }
@@ -570,10 +603,10 @@ impl World {
         let aging_rate = (1.0 / size.lifespan_multiplier()) as u8;
         let mut new_age = age.saturating_add(aging_rate);
         
-        // Stems die after adjusted lifespan
+        // Stems die after adjusted lifespan - transition to withered state
         let max_age = (255.0 * size.lifespan_multiplier()) as u8;
         if new_age >= max_age {
-            new_tiles[y][x] = TileType::Nutrient;
+            new_tiles[y][x] = TileType::PlantWithered(0, size);
             return;
         }
         
@@ -620,10 +653,10 @@ impl World {
         let aging_rate = (1.0 / size.lifespan_multiplier()) as u8;
         let mut new_age = age.saturating_add(aging_rate);
         
-        // Leaves die after adjusted lifespan
+        // Leaves die after adjusted lifespan - transition to withered state
         let max_age = (150.0 * size.lifespan_multiplier()) as u8;
         if new_age >= max_age {
-            new_tiles[y][x] = TileType::Nutrient;
+            new_tiles[y][x] = TileType::PlantWithered(0, size);
             return;
         }
         
@@ -702,10 +735,10 @@ impl World {
         let aging_rate = (1.0 / size.lifespan_multiplier()) as u8;
         let new_age = age.saturating_add(aging_rate);
         
-        // Flowers wither after adjusted lifespan
+        // Flowers wither after adjusted lifespan - transition to withered state
         let max_age = (100.0 * size.lifespan_multiplier()) as u8;
         if new_age >= max_age {
-            new_tiles[y][x] = TileType::Nutrient;
+            new_tiles[y][x] = TileType::PlantWithered(0, size);
             return;
         }
         
@@ -748,14 +781,27 @@ impl World {
         new_tiles[y][x] = TileType::PlantFlower(new_age, size);
     }
     
+    fn update_plant_withered(&self, x: usize, y: usize, age: u8, size: Size, new_tiles: &mut [Vec<TileType>], _rng: &mut impl Rng) {
+        let aging_rate = 2; // Withered plants decay faster than living ones
+        let new_age = age.saturating_add(aging_rate);
+        
+        // Withered plants become nutrients after 30 ticks
+        if new_age >= 30 {
+            new_tiles[y][x] = TileType::Nutrient;
+            return;
+        }
+        
+        new_tiles[y][x] = TileType::PlantWithered(new_age, size);
+    }
+    
     fn update_pillbug_head(&self, x: usize, y: usize, age: u8, size: Size, new_tiles: &mut [Vec<TileType>], rng: &mut impl Rng) {
         let aging_rate = (1.0 / size.lifespan_multiplier()) as u8;
         let mut new_age = age.saturating_add(aging_rate);
         
-        // Pillbug head dies after adjusted lifespan
+        // Pillbug head dies after adjusted lifespan - transition to decaying state
         let max_age = (180.0 * size.lifespan_multiplier()) as u8;
         if new_age >= max_age {
-            new_tiles[y][x] = TileType::Nutrient;
+            new_tiles[y][x] = TileType::PillbugDecaying(0, size);
             return;
         }
         
@@ -774,6 +820,7 @@ impl World {
                             TileType::PlantFlower(_, _) => 0.12,   // Like flowers
                             TileType::PlantBud(_, _) => 0.08,      // Eat buds sometimes
                             TileType::PlantStem(_, _) => 0.03,     // Rarely eat stems
+                            TileType::PlantWithered(_, _) => 0.20, // Love withered plants (easier to eat)
                             _ => 0.0,
                         };
                         
@@ -837,10 +884,10 @@ impl World {
         let aging_rate = (1.0 / size.lifespan_multiplier()) as u8;
         let new_age = age.saturating_add(aging_rate);
         
-        // Pillbug body dies after adjusted lifespan
+        // Pillbug body dies after adjusted lifespan - transition to decaying state
         let max_age = (180.0 * size.lifespan_multiplier()) as u8;
         if new_age >= max_age {
-            new_tiles[y][x] = TileType::Nutrient;
+            new_tiles[y][x] = TileType::PillbugDecaying(0, size);
             return;
         }
         
@@ -851,14 +898,27 @@ impl World {
         let aging_rate = (1.0 / size.lifespan_multiplier()) as u8;
         let new_age = age.saturating_add(aging_rate);
         
-        // Pillbug legs die after adjusted lifespan
+        // Pillbug legs die after adjusted lifespan - transition to decaying state
         let max_age = (180.0 * size.lifespan_multiplier()) as u8;
         if new_age >= max_age {
-            new_tiles[y][x] = TileType::Nutrient;
+            new_tiles[y][x] = TileType::PillbugDecaying(0, size);
             return;
         }
         
         new_tiles[y][x] = TileType::PillbugLegs(new_age, size);
+    }
+    
+    fn update_pillbug_decaying(&self, x: usize, y: usize, age: u8, size: Size, new_tiles: &mut [Vec<TileType>], _rng: &mut impl Rng) {
+        let aging_rate = 1; // Decaying pillbugs decompose at normal rate
+        let new_age = age.saturating_add(aging_rate);
+        
+        // Decaying pillbugs become nutrients after 20 ticks
+        if new_age >= 20 {
+            new_tiles[y][x] = TileType::Nutrient;
+            return;
+        }
+        
+        new_tiles[y][x] = TileType::PillbugDecaying(new_age, size);
     }
     
     fn try_spawn_pillbug(&self, x: usize, y: usize, parent_size: Size, new_tiles: &mut [Vec<TileType>], rng: &mut impl Rng) {
@@ -1252,6 +1312,10 @@ fn ui(f: &mut Frame, app: &App) {
                 Span::styled("·*✱", Style::default().fg(Color::Rgb(255, 150, 200))),
                 Span::raw(" = Plant Flower (small/med/large)")
             ]),
+            Line::from(vec![
+                Span::styled("x", Style::default().fg(Color::Rgb(100, 50, 0))),
+                Span::raw(" = Plant Withered (gradual decay)")
+            ]),
             Line::from("  - Size affects: lifespan, growth rate, spread"),
             Line::from("  - Large: live longer, grow/reproduce slower"),
             Line::from("  - Small: live shorter, grow/reproduce faster"),
@@ -1269,6 +1333,10 @@ fn ui(f: &mut Frame, app: &App) {
             Line::from(vec![
                 Span::styled("vwW", Style::default().fg(Color::Rgb(110, 120, 140))),
                 Span::raw(" = Pillbug Legs (small/med/large)")
+            ]),
+            Line::from(vec![
+                Span::styled("░", Style::default().fg(Color::Rgb(80, 26, 40))),
+                Span::raw(" = Pillbug Decaying (gradual decay)")
             ]),
             Line::from("  - Size affects: movement, eating, lifespan"),
             Line::from("  - Large: eat better, move slower, starve faster"),
