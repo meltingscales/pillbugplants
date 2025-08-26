@@ -681,10 +681,19 @@ impl World {
             if found_nutrients { break; }
         }
         
+        // Water provides additional benefits - slows aging and boosts growth
+        let has_water = self.has_nearby_water(x, y, 2);
+        if has_water {
+            new_age = new_age.saturating_sub(1); // Water slows aging
+        }
+        
         new_tiles[y][x] = TileType::PlantStem(new_age, size);
         
-        // Healthy stems can grow buds during the day - rate affected by size
-        let bud_chance = 0.03 * size.growth_rate_multiplier();
+        // Healthy stems can grow buds during the day - rate affected by size and water
+        let mut bud_chance = 0.03 * size.growth_rate_multiplier();
+        if has_water {
+            bud_chance *= 1.5; // Water boosts bud growth by 50%
+        }
         if found_nutrients && self.is_day() && new_age < (max_age as u16 * 2 / 3) as u8 && rng.gen_bool(bud_chance as f64) {
             let directions = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0)];
             if let Some(&(dx, dy)) = directions.choose(rng) {
@@ -714,12 +723,21 @@ impl World {
             return;
         }
         
+        // Water benefits for leaves
+        let has_water = self.has_nearby_water(x, y, 2);
+        if has_water {
+            new_age = new_age.saturating_sub(1); // Water slows aging
+        }
+        
         // Leaves photosynthesize during day (slow aging)
         if self.is_day() {
             new_age = new_age.saturating_sub(1);
             
-            // Healthy leaves can sometimes produce nutrients during the day - rate affected by size
-            let nutrient_chance = 0.02 * size.growth_rate_multiplier();
+            // Healthy leaves can sometimes produce nutrients during the day - rate affected by size and water
+            let mut nutrient_chance = 0.02 * size.growth_rate_multiplier();
+            if has_water {
+                nutrient_chance *= 1.3; // Water boosts nutrient production by 30%
+            }
             if new_age < (max_age as u16 * 2 / 3) as u8 && rng.gen_bool(nutrient_chance as f64) {
                 let directions = [(-1, 0), (1, 0), (0, -1), (0, 1)];
                 if let Some(&(dx, dy)) = directions.choose(rng) {
@@ -1194,6 +1212,21 @@ impl World {
     
     fn is_day(&self) -> bool {
         self.day_cycle.sin() > 0.0
+    }
+    
+    fn has_nearby_water(&self, x: usize, y: usize, radius: i32) -> bool {
+        for dy in -radius..=radius {
+            for dx in -radius..=radius {
+                let nx = (x as i32 + dx) as usize;
+                let ny = (y as i32 + dy) as usize;
+                if nx < self.width && ny < self.height {
+                    if self.tiles[ny][nx] == TileType::Water {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 }
 
