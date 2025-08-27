@@ -12,7 +12,6 @@ if [ -z "$VIRTUAL_ENV" ]; then
 fi
 
 source ./setup-env.bash
-MODEL=llama3.2:3b
 
 echo "Starting infinite AI loop with $MODEL at $OLLAMA_API_BASE. You may not see output for a while."
 echo "CTRL-C will not kill this, you need to kill the terminal."
