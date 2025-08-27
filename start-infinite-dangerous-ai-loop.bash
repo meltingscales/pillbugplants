@@ -1,8 +1,20 @@
-echo "Starting infinite AI loop with devstral small 1.1 at 192.168.0.186. You may not see output for a while. CTRL-C will not kill this, you need to kill the terminal."
-export OLLAMA_API_BASE=http://192.168.0.186:11434
+
+if [ ! -f "./setup-env.bash" ]; then
+    echo "Please populate setup-env.bash with env vars that are needed."
+    exit 1
+fi
+
+source ./setup-env.bash
+MODEL=llama3.2:3b
+
+echo "Starting infinite AI loop with $MODEL at $OLLAMA_API_BASE. You may not see output for a while."
+echo "CTRL-C will not kill this, you need to kill the terminal."
+
 poetry install
 poetry run aider-install
-while :; poetry run aider --message-file PROMPT.md --model ollama_chat/llama3.2:3b --restore-chat-history --yes-always --no-fancy-input; done
+while :; 
+    poetry run aider --message-file PROMPT.md --model ollama_chat/$MODEL --restore-chat-history --yes-always --no-fancy-input;
+done
 
 
 # todo - ask ai below to fix this... and make sure aiders source code is open in its context.
