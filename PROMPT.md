@@ -1,4 +1,3 @@
-# pillbugplants
 Your job is to build and maintain a Rust project called “pillbugplants.”
 It is a ratatui-based physics sandbox inspired by falling-sand games.
 It was inspired by watching pillbugs wander around the playground as a young kid.
