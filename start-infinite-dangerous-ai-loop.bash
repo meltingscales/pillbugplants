@@ -4,6 +4,13 @@ if [ ! -f "./setup-env.bash" ]; then
     exit 1
 fi
 
+
+# Check if the VIRTUAL_ENV variable is set
+if [ -z "$VIRTUAL_ENV" ]; then
+  echo "Not in a virtual environment. Exiting. Please run this within 'poetry shell'"
+  exit 1 # Exit with a non-zero status to indicate an error
+fi
+
 source ./setup-env.bash
 MODEL=llama3.2:3b
 
@@ -11,9 +18,9 @@ echo "Starting infinite AI loop with $MODEL at $OLLAMA_API_BASE. You may not see
 echo "CTRL-C will not kill this, you need to kill the terminal."
 
 poetry install
-poetry run aider-install
+aider-install
 while :; 
-    poetry run aider --message-file PROMPT.md --model ollama_chat/$MODEL --restore-chat-history --yes-always --no-fancy-input;
+    aider --message-file PROMPT.md --model ollama_chat/$MODEL --restore-chat-history --yes-always --no-fancy-input;
 done
 
 
