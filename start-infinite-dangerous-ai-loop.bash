@@ -23,3 +23,7 @@ while :; do
 done
 
 #  --max-reflections 99999 
+# this dumb setting doesnt exist so we need to manually edit it bc they havent made it a feature yet
+# /home/vagrant/.local/share/uv/tools/aider-chat/
+# /home/vagrant/.local/share/uv/tools/aider-chat/lib/python3.12/site-packages/aider
+# /home/vagrant/.local/share/uv/tools/aider-chat/lib/python3.12/site-packages/aider/coders/base_coder.py <--this one
