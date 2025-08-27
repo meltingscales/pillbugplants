@@ -117,3 +117,5 @@ make full-check
 ## Inspiration
 
 Inspired by [repomirror documentation](https://github.com/repomirrorhq/repomirror/blob/main/repomirror.md) and watching pillbugs on the playground.
+
+TODO: Ask on Aider discord what the right way is to use aider automatically. send them this repo.
