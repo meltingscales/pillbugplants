@@ -22,6 +22,8 @@ while :; do
     aider --message-file PROMPT.md --model ollama_chat/$MODEL --restore-chat-history --yes-always --no-fancy-input
 done
 
+# TODO try out opencode, it might be better.
+
 #  --max-reflections 99999 
 # this dumb setting doesnt exist so we need to manually edit it bc they havent made it a feature yet
 # /home/vagrant/.local/share/uv/tools/aider-chat/
