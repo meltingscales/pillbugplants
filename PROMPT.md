@@ -24,3 +24,5 @@ Make sure not to run `make run` since it'll fail.
 
 Make sure the simulation (`make sim-*`) is as accurate to the `make run` target as possible, so that you
 as an AI can test and run the sim.
+
+You don't need my permission to make edits. You're in a sandbox so it's completely safe. Go have fun!
