@@ -1,0 +1,6 @@
+- src/
+    - plant.rs // Plant and its behaviors (growth, decay etc.)
+    - pillbug.rs // Pillbug behavior like wandering, reproduction & decay over time...
+    - main.rs // Main simulation loop with physics calculations..
+    - tile_type.rs // Different types representing different body segments for both plants/pillbugs 
+    - physics.rs // Physics related functions (e.g., nutrient diffusion)
