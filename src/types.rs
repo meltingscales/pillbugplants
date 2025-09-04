@@ -1,0 +1,228 @@
+use rand::Rng;
+use ratatui::style::Color;
+
+#[derive(Debug, Clone)]
+pub enum MovementStrategy {
+    SeekFood((i32, i32)),    // Direction to food
+    Social((i32, i32)),      // Direction to other pillbugs
+    Avoid((i32, i32)),       // Direction away from danger
+    Explore,                 // Random exploration
+    Rest,                    // Stay put or minimal movement
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum Size {
+    Small = 0,   // Faster growth, shorter life, weaker
+    Medium = 1,  // Normal values  
+    Large = 2,   // Slower growth, longer life, stronger
+}
+
+impl Size {
+    pub fn lifespan_multiplier(self) -> f32 {
+        match self {
+            Size::Small => 0.7,   // 30% shorter life
+            Size::Medium => 1.0,  // Normal lifespan
+            Size::Large => 1.4,   // 40% longer life
+        }
+    }
+    
+    pub fn growth_rate_multiplier(self) -> f32 {
+        match self {
+            Size::Small => 1.3,   // 30% faster growth/reproduction
+            Size::Medium => 1.0,  // Normal rate
+            Size::Large => 0.8,   // 20% slower growth/reproduction
+        }
+    }
+    
+    pub fn to_char_modifier(self, base_char: char) -> char {
+        match (self, base_char) {
+            (Size::Small, '|') => 'i',    // Small stem
+            (Size::Small, 'L') => 'l',    // Small leaf
+            (Size::Small, 'o') => '°',    // Small bud
+            (Size::Small, '*') => '·',    // Small flower
+            (Size::Small, '@') => 'ó',    // Small head
+            (Size::Small, 'O') => 'o',    // Small body
+            (Size::Small, 'w') => 'v',    // Small legs
+            (Size::Large, '|') => '║',    // Large stem
+            (Size::Large, 'L') => 'Ł',    // Large leaf
+            (Size::Large, 'o') => 'O',    // Large bud
+            (Size::Large, '*') => '✱',    // Large flower
+            (Size::Large, '@') => '●',    // Large head
+            (Size::Large, 'O') => '●',    // Large body
+            (Size::Large, 'w') => 'W',    // Large legs
+            _ => base_char, // Medium size keeps original char
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum TileType {
+    Empty,
+    Dirt,
+    Sand,
+    Water,
+    PlantStem(u8, Size),   // Main structural support, age 0-255, size
+    PlantLeaf(u8, Size),   // Photosynthesis organs, age 0-150, size
+    PlantBud(u8, Size),    // Growth points that become branches/flowers, age 0-50, size
+    PlantFlower(u8, Size), // Reproductive organs, age 0-100, size
+    PlantWithered(u8, Size), // Dying plant part, age 0-30 before becoming nutrient, size
+    PillbugHead(u8, Size),    // Head segment of pillbug, age 0-180, size
+    PillbugBody(u8, Size),    // Body segment of pillbug, age 0-180, size
+    PillbugLegs(u8, Size),    // Leg segment of pillbug, age 0-180, size
+    PillbugDecaying(u8, Size), // Dying pillbug part, age 0-20 before becoming nutrient, size
+    Nutrient,
+}
+
+impl TileType {
+    pub fn to_char(self) -> char {
+        match self {
+            TileType::Empty => ' ',
+            TileType::Dirt => '#',
+            TileType::Sand => '.',
+            TileType::Water => '~',
+            TileType::PlantStem(_, size) => size.to_char_modifier('|'),
+            TileType::PlantLeaf(_, size) => size.to_char_modifier('L'),
+            TileType::PlantBud(_, size) => size.to_char_modifier('o'),
+            TileType::PlantFlower(_, size) => size.to_char_modifier('*'),
+            TileType::PlantWithered(_, size) => size.to_char_modifier('x'), // Withered plants
+            TileType::PillbugHead(_, size) => size.to_char_modifier('@'),
+            TileType::PillbugBody(_, size) => size.to_char_modifier('O'),
+            TileType::PillbugLegs(_, size) => size.to_char_modifier('w'),
+            TileType::PillbugDecaying(_, size) => size.to_char_modifier('░'), // Decaying pillbugs
+            TileType::Nutrient => '+',
+        }
+    }
+    
+    pub fn to_color(self) -> Color {
+        match self {
+            TileType::Empty => Color::Black,
+            TileType::Dirt => Color::Rgb(101, 67, 33),
+            TileType::Sand => Color::Yellow,
+            TileType::Water => Color::Blue,
+            TileType::PlantStem(age, size) => {
+                let base_intensity = (255u16.saturating_sub(age as u16)).max(80) as u8;
+                let size_boost = match size {
+                    Size::Small => 0.85,   // Slightly dimmer
+                    Size::Medium => 1.0,   // Normal
+                    Size::Large => 1.15,   // Slightly brighter
+                };
+                let intensity = (base_intensity as f32 * size_boost).min(255.0) as u8;
+                Color::Rgb(intensity / 3, intensity, intensity / 4) // Brown-green stem
+            },
+            TileType::PlantLeaf(age, size) => {
+                let base_intensity = (150u16.saturating_sub(age as u16)).max(60) as u8;
+                let size_boost = match size {
+                    Size::Small => 0.85,
+                    Size::Medium => 1.0,
+                    Size::Large => 1.15,
+                };
+                let intensity = (base_intensity as f32 * size_boost).min(255.0) as u8;
+                Color::Rgb(0, intensity, 0) // Green leaves
+            },
+            TileType::PlantBud(age, size) => {
+                let base_intensity = (50u16.saturating_sub(age as u16)).max(120) as u8;
+                let size_boost = match size {
+                    Size::Small => 0.85,
+                    Size::Medium => 1.0,
+                    Size::Large => 1.15,
+                };
+                let intensity = (base_intensity as f32 * size_boost).min(255.0) as u8;
+                Color::Rgb(intensity, intensity / 2, 0) // Orange-ish buds
+            },
+            TileType::PlantFlower(age, size) => {
+                let fade = age as u16;
+                let base_red = (255 - fade).max(100) as u8;
+                let base_green = (200 - fade / 2).max(50) as u8;
+                let base_blue = (255 - fade).max(100) as u8;
+                let size_boost = match size {
+                    Size::Small => 0.85,
+                    Size::Medium => 1.0,
+                    Size::Large => 1.15,
+                };
+                let red = (base_red as f32 * size_boost).min(255.0) as u8;
+                let green = (base_green as f32 * size_boost).min(255.0) as u8;
+                let blue = (base_blue as f32 * size_boost).min(255.0) as u8;
+                Color::Rgb(red, green, blue) // Pink-white flowers
+            },
+            TileType::PlantWithered(age, size) => {
+                let decay_progress = age as f32 / 30.0; // 0.0 = fresh withered, 1.0 = almost nutrient
+                let base_intensity = (100.0 * (1.0 - decay_progress * 0.6)) as u8; // Darken over time
+                let size_boost = match size {
+                    Size::Small => 0.8,
+                    Size::Medium => 1.0,
+                    Size::Large => 1.2,
+                };
+                let intensity = (base_intensity as f32 * size_boost).min(255.0) as u8;
+                Color::Rgb(intensity, intensity / 2, 0) // Brown withered color
+            },
+            TileType::PillbugHead(age, size) => {
+                let base_intensity = (180u16.saturating_sub(age as u16)).max(60) as u8;
+                let size_boost = match size {
+                    Size::Small => 0.8,
+                    Size::Medium => 1.0,
+                    Size::Large => 1.2,
+                };
+                let intensity = (base_intensity as f32 * size_boost).min(255.0) as u8;
+                Color::Rgb(intensity.saturating_add(20), intensity, intensity.saturating_sub(10)) // Slightly reddish head
+            },
+            TileType::PillbugBody(age, size) => {
+                let base_intensity = (180u16.saturating_sub(age as u16)).max(50) as u8;
+                let size_boost = match size {
+                    Size::Small => 0.8,
+                    Size::Medium => 1.0,
+                    Size::Large => 1.2,
+                };
+                let intensity = (base_intensity as f32 * size_boost).min(255.0) as u8;
+                Color::Rgb(intensity, intensity, intensity) // Gray body
+            },
+            TileType::PillbugLegs(age, size) => {
+                let base_intensity = (180u16.saturating_sub(age as u16)).max(40) as u8;
+                let size_boost = match size {
+                    Size::Small => 0.8,
+                    Size::Medium => 1.0,
+                    Size::Large => 1.2,
+                };
+                let intensity = (base_intensity as f32 * size_boost).min(255.0) as u8;
+                Color::Rgb(intensity.saturating_sub(20), intensity.saturating_sub(10), intensity) // Slightly bluish legs
+            },
+            TileType::PillbugDecaying(age, size) => {
+                let decay_progress = age as f32 / 20.0; // 0.0 = fresh decay, 1.0 = almost nutrient
+                let base_intensity = (80.0 * (1.0 - decay_progress * 0.7)) as u8; // Darken significantly over time
+                let size_boost = match size {
+                    Size::Small => 0.7,
+                    Size::Medium => 1.0,
+                    Size::Large => 1.3,
+                };
+                let intensity = (base_intensity as f32 * size_boost).min(255.0) as u8;
+                Color::Rgb(intensity, intensity / 3, intensity / 2) // Dark brownish-red decay color
+            },
+            TileType::Nutrient => Color::Magenta,
+        }
+    }
+    
+    pub fn is_plant(self) -> bool {
+        matches!(self, TileType::PlantStem(_, _) | TileType::PlantLeaf(_, _) | TileType::PlantBud(_, _) | TileType::PlantFlower(_, _) | TileType::PlantWithered(_, _))
+    }
+    
+    pub fn is_pillbug(self) -> bool {
+        matches!(self, TileType::PillbugHead(_, _) | TileType::PillbugBody(_, _) | TileType::PillbugLegs(_, _) | TileType::PillbugDecaying(_, _))
+    }
+    
+    pub fn get_size(self) -> Option<Size> {
+        match self {
+            TileType::PlantStem(_, size) | TileType::PlantLeaf(_, size) | 
+            TileType::PlantBud(_, size) | TileType::PlantFlower(_, size) | TileType::PlantWithered(_, size) |
+            TileType::PillbugHead(_, size) | TileType::PillbugBody(_, size) | TileType::PillbugLegs(_, size) | TileType::PillbugDecaying(_, size) => Some(size),
+            _ => None,
+        }
+    }
+}
+
+pub fn random_size(rng: &mut impl Rng) -> Size {
+    match rng.gen_range(0..10) {
+        0..=2 => Size::Small,   // 30% small
+        3..=6 => Size::Medium,  // 40% medium  
+        7..=9 => Size::Large,   // 30% large
+        _ => Size::Medium,
+    }
+}
