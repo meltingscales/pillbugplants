@@ -460,24 +460,46 @@ impl World {
                         let mut new_age = age.saturating_add(1);
                         let mut well_fed = false;
                         
-                        // Eating behavior - pillbugs eat plants and nutrients
+                        // Size-based eating behavior - efficiency depends on pillbug and food size
                         for dy in -1..=1 {
                             for dx in -1..=1 {
                                 let nx = (x as i32 + dx) as usize;
                                 let ny = (y as i32 + dy) as usize;
                                 if nx < self.width && ny < self.height {
                                     match self.tiles[ny][nx] {
-                                        TileType::PlantLeaf(_, _) | TileType::PlantWithered(_, _) => {
-                                            if rng.gen_bool(0.2) {
+                                        TileType::PlantLeaf(_, food_size) | TileType::PlantWithered(_, food_size) => {
+                                            let eating_efficiency = self.calculate_eating_efficiency(size, food_size);
+                                            if rng.gen_bool(eating_efficiency) {
                                                 new_tiles[ny][nx] = TileType::Empty;
-                                                new_age = new_age.saturating_sub(5);
+                                                // Nutrition gained depends on food size
+                                                let nutrition = match food_size {
+                                                    Size::Small => 3,
+                                                    Size::Medium => 5,
+                                                    Size::Large => 8,
+                                                };
+                                                new_age = new_age.saturating_sub(nutrition);
+                                                well_fed = true;
+                                            }
+                                        }
+                                        TileType::PlantBranch(_, food_size) => {
+                                            // Branches are harder to eat but more nutritious
+                                            let eating_efficiency = self.calculate_eating_efficiency(size, food_size) * 0.7;
+                                            if rng.gen_bool(eating_efficiency) {
+                                                new_tiles[ny][nx] = TileType::Empty;
+                                                let nutrition = match food_size {
+                                                    Size::Small => 4,
+                                                    Size::Medium => 6,
+                                                    Size::Large => 10,
+                                                };
+                                                new_age = new_age.saturating_sub(nutrition);
                                                 well_fed = true;
                                             }
                                         }
                                         TileType::Nutrient => {
-                                            if rng.gen_bool(0.3) {
+                                            // Nutrients are always easy to consume regardless of pillbug size
+                                            if rng.gen_bool(0.4) {
                                                 new_tiles[ny][nx] = TileType::Empty;
-                                                new_age = new_age.saturating_sub(3);
+                                                new_age = new_age.saturating_sub(4);
                                                 well_fed = true;
                                             }
                                         }
@@ -594,6 +616,28 @@ impl World {
         }
         
         self.tiles = new_tiles;
+    }
+    
+    fn calculate_eating_efficiency(&self, pillbug_size: Size, food_size: Size) -> f64 {
+        // Base efficiency based on size matching
+        let base_efficiency = match (pillbug_size, food_size) {
+            // Perfect size matches are most efficient
+            (Size::Small, Size::Small) => 0.35,
+            (Size::Medium, Size::Medium) => 0.30,
+            (Size::Large, Size::Large) => 0.25,
+            
+            // Large pillbugs can handle smaller food efficiently
+            (Size::Large, Size::Medium) => 0.30,
+            (Size::Large, Size::Small) => 0.40,
+            (Size::Medium, Size::Small) => 0.35,
+            
+            // Smaller pillbugs struggle with larger food
+            (Size::Small, Size::Medium) => 0.15,
+            (Size::Small, Size::Large) => 0.05,
+            (Size::Medium, Size::Large) => 0.20,
+        };
+        
+        base_efficiency
     }
     
     fn determine_movement_strategy(&self, x: usize, y: usize, size: Size, age: u8) -> MovementStrategy {

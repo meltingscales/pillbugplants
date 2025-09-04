@@ -133,6 +133,10 @@ pub fn ui(f: &mut Frame, app: &App) {
                 Span::raw(" = Plant Bud (small/med/large)")
             ]),
             Line::from(vec![
+                Span::styled("\\|╱", Style::default().fg(Color::Rgb(60, 180, 80))),
+                Span::raw(" = Plant Branch (small/med/large)")
+            ]),
+            Line::from(vec![
                 Span::styled("·*✱", Style::default().fg(Color::Rgb(255, 150, 200))),
                 Span::raw(" = Plant Flower (small/med/large)")
             ]),
@@ -144,6 +148,8 @@ pub fn ui(f: &mut Frame, app: &App) {
             Line::from("  - Large: live longer, grow/reproduce slower"),
             Line::from("  - Small: live shorter, grow/reproduce faster"),
             Line::from("  - Large flowers spread seeds farther"),
+            Line::from("  - Buds mature into branches (60%) or flowers (40%)"),
+            Line::from("  - Branches create Y-shaped growth patterns"),
             Line::from(""),
             Line::from("PILLBUGS (multi-segment with sizes!):"),
             Line::from(vec![
