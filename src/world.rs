@@ -1,4 +1,5 @@
 use std::fmt;
+use std::collections::HashSet;
 use rand::{Rng, seq::SliceRandom, prelude::IteratorRandom};
 use crate::types::{TileType, Size, random_size, MovementStrategy, Season, Biome, random_biome};
 
@@ -15,6 +16,17 @@ impl TileChange {
     fn new(x: usize, y: usize, old_tile: TileType, new_tile: TileType) -> Self {
         Self { x, y, old_tile, new_tile }
     }
+}
+
+// Ecosystem health and diversity statistics
+#[derive(Debug)]
+pub struct EcosystemStats {
+    pub total_plants: usize,
+    pub total_pillbugs: usize,
+    pub water_coverage: usize,
+    pub nutrient_count: usize,
+    pub plant_health_ratio: f32,  // 0.0-1.0, higher means more healthy plants
+    pub biome_diversity: usize,   // Number of different biomes present
 }
 
 pub struct World {
@@ -1643,6 +1655,63 @@ impl World {
             }
         }
     }
+    
+    // Calculate ecosystem statistics for monitoring
+    pub fn calculate_ecosystem_stats(&self) -> EcosystemStats {
+        let mut stats = EcosystemStats {
+            total_plants: 0,
+            total_pillbugs: 0,
+            water_coverage: 0,
+            nutrient_count: 0,
+            plant_health_ratio: 0.0,
+            biome_diversity: 0,
+        };
+        
+        let mut healthy_plants = 0;
+        let mut _diseased_plants = 0;
+        let mut biome_types = HashSet::new();
+        
+        for y in 0..self.height {
+            for x in 0..self.width {
+                match self.tiles[y][x] {
+                    // Count plant parts
+                    TileType::PlantStem(_, _) | TileType::PlantLeaf(_, _) | 
+                    TileType::PlantBud(_, _) | TileType::PlantBranch(_, _) | 
+                    TileType::PlantFlower(_, _) | TileType::PlantRoot(_, _) => {
+                        stats.total_plants += 1;
+                        healthy_plants += 1;
+                    },
+                    TileType::PlantWithered(_, _) | TileType::PlantDiseased(_, _) => {
+                        stats.total_plants += 1;
+                        _diseased_plants += 1;
+                    },
+                    
+                    // Count pillbug parts
+                    TileType::PillbugHead(_, _) | TileType::PillbugBody(_, _) | 
+                    TileType::PillbugLegs(_, _) | TileType::PillbugDecaying(_, _) => {
+                        stats.total_pillbugs += 1;
+                    },
+                    
+                    // Count environmental elements
+                    TileType::Water(_) => stats.water_coverage += 1,
+                    TileType::Nutrient => stats.nutrient_count += 1,
+                    
+                    _ => {},
+                }
+                
+                // Track biome diversity
+                biome_types.insert(std::mem::discriminant(&self.biome_map[y][x]));
+            }
+        }
+        
+        // Calculate health ratio
+        if stats.total_plants > 0 {
+            stats.plant_health_ratio = healthy_plants as f32 / stats.total_plants as f32;
+        }
+        
+        stats.biome_diversity = biome_types.len();
+        stats
+    }
 }
 
 impl fmt::Display for World {
@@ -1660,6 +1729,13 @@ impl fmt::Display for World {
         writeln!(f, "Rain intensity: {:.2} | Wind: {:.1} @ {:.0}°", 
                  self.rain_intensity, self.wind_strength, 
                  self.wind_direction * 180.0 / std::f32::consts::PI)?;
+        
+        // Add ecosystem statistics
+        let stats = self.calculate_ecosystem_stats();
+        writeln!(f, "Ecosystem: Plants:{} Pillbugs:{} Water:{} Nutrients:{}", 
+                 stats.total_plants, stats.total_pillbugs, stats.water_coverage, stats.nutrient_count)?;
+        writeln!(f, "Health:{:.1}% Biomes:{} ({}x{} world)", 
+                 stats.plant_health_ratio * 100.0, stats.biome_diversity, self.width, self.height)?;
         Ok(())
     }
 }

@@ -24,11 +24,11 @@
 - [✅] Add wind effects on seed dispersal and small particles
 
 ## Engine Enhancements
-- [ ] Optimize physics calculations for larger worlds
-- [ ] Add more sophisticated collision detection
-- [ ] Implement water flow patterns and pooling
-- [ ] Add wind effects on seeds and small particles
-- [ ] Create biome variations (wet/dry areas)
+- [✅] Optimize physics calculations for larger worlds (tile change queue system implemented)
+- [ ] Add more sophisticated collision detection  
+- [✅] Implement water flow patterns and pooling (depth-based physics with biome-specific behavior)
+- [✅] Add wind effects on seeds and small particles (comprehensive wind system with seasonal patterns)
+- [✅] Create biome variations (wet/dry areas) (four distinct biomes: Wetland, Grassland, Drylands, Woodland)
 
 ## Simulation Features
 - [ ] Add more plant species with different growth patterns
@@ -91,3 +91,8 @@
   * **Emergent ecosystem behaviors**: Self-organizing communities, resource competition, and natural selection
   * **Rich environmental interactions**: Spore dispersal, nutrient cycling, disease spread, and recovery patterns
   * **Stable long-term dynamics**: Sustainable ecosystem that maintains complexity over extended periods
+- 🎉 **ENGINE PERFORMANCE OPTIMIZATION** - Tile change queue system implemented:
+  * **Memory efficiency**: Eliminated full world array clones during physics updates
+  * **Reduced allocations**: Change queue system minimizes memory pressure for large worlds
+  * **Maintained determinism**: Identical simulation behavior with better performance
+  * **Scalable foundation**: Architecture supports efficient optimization of additional physics systems
