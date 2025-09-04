@@ -19,6 +19,7 @@ A falling-sand style physics sandbox simulating a miniature ecosystem inspired b
 - **PlantBud**: Growth points that mature into branches or flowers
 - **PlantBranch**: Diagonal growth creating Y-shaped branching patterns
 - **PlantFlower**: Reproductive organs that spread seeds
+- **PlantDiseased**: Infected plant matter that spreads to nearby plants
 - **PlantWithered**: Dying plant matter that decomposes into nutrients
 
 Size variants (Small/Medium/Large):
@@ -82,6 +83,7 @@ Movement probability varies by strategy and pillbug characteristics.
 - **Population Balance**: Automatic spawning maintains minimum populations
 - **Environmental Cycles**: Day/night affects growth and rain patterns
 - **Size Inheritance**: Offspring inherit size with variation chance
+- **Disease Pressure**: Seasonal disease introduction creates population bottlenecks
 
 ## Rendering
 ASCII characters with color coding:
