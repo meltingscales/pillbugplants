@@ -1521,39 +1521,44 @@ impl World {
         
         // Move pillbugs (heads control movement) and grow baby segments
         for (x, y, size, age) in pillbug_heads {
-            // Baby pillbugs grow body segments as they mature
-            if age == 10 {
-                // Grow body segment
-                for (dx, dy) in &[(1, 0), (-1, 0), (0, 1), (0, -1)] {
-                    let nx = (x as i32 + dx) as usize;
-                    let ny = (y as i32 + dy) as usize;
-                    if nx < self.width && ny < self.height && new_tiles[ny][nx] == TileType::Empty {
-                        new_tiles[ny][nx] = TileType::PillbugBody(age, size);
-                        break;
+            // Baby pillbugs grow body segments as they mature, but only if they're stable (not falling)
+            let connected_segments = self.find_connected_pillbug_segments(x, y);
+            let is_falling = self.is_pillbug_group_unsupported(&connected_segments);
+            
+            if !is_falling {
+                if age == 10 {
+                    // Grow body segment only if stable
+                    for (dx, dy) in &[(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                        let nx = (x as i32 + dx) as usize;
+                        let ny = (y as i32 + dy) as usize;
+                        if nx < self.width && ny < self.height && new_tiles[ny][nx] == TileType::Empty {
+                            new_tiles[ny][nx] = TileType::PillbugBody(age, size);
+                            break;
+                        }
                     }
-                }
-            } else if age == 20 {
-                // Grow legs segment
-                // Find the body segment first
-                for (dx, dy) in &[(1, 0), (-1, 0), (0, 1), (0, -1)] {
-                    let bx = (x as i32 + dx) as usize;
-                    let by = (y as i32 + dy) as usize;
-                    if bx < self.width && by < self.height {
-                        if let TileType::PillbugBody(_, b_size) = new_tiles[by][bx] {
-                            if b_size == size {
-                                // Try to add legs next to body
-                                for (dx2, dy2) in &[(1, 0), (-1, 0), (0, 1), (0, -1)] {
-                                    let lx = (bx as i32 + dx2) as usize;
-                                    let ly = (by as i32 + dy2) as usize;
-                                    if lx < self.width && ly < self.height && new_tiles[ly][lx] == TileType::Empty {
-                                        // Make sure it's not next to the head
-                                        if lx != x || ly != y {
-                                            new_tiles[ly][lx] = TileType::PillbugLegs(age, size);
-                                            break;
+                } else if age == 20 {
+                    // Grow legs segment only if stable
+                    // Find the body segment first
+                    for (dx, dy) in &[(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                        let bx = (x as i32 + dx) as usize;
+                        let by = (y as i32 + dy) as usize;
+                        if bx < self.width && by < self.height {
+                            if let TileType::PillbugBody(_, b_size) = new_tiles[by][bx] {
+                                if b_size == size {
+                                    // Try to add legs next to body
+                                    for (dx2, dy2) in &[(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                                        let lx = (bx as i32 + dx2) as usize;
+                                        let ly = (by as i32 + dy2) as usize;
+                                        if lx < self.width && ly < self.height && new_tiles[ly][lx] == TileType::Empty {
+                                            // Make sure it's not next to the head
+                                            if lx != x || ly != y {
+                                                new_tiles[ly][lx] = TileType::PillbugLegs(age, size);
+                                                break;
+                                            }
                                         }
                                     }
+                                    break;
                                 }
-                                break;
                             }
                         }
                     }

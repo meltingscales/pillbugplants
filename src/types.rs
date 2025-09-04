@@ -61,9 +61,9 @@ pub enum Size {
 impl Size {
     pub fn lifespan_multiplier(self) -> f32 {
         match self {
-            Size::Small => 0.7,   // 30% shorter life
-            Size::Medium => 1.0,  // Normal lifespan
-            Size::Large => 1.4,   // 40% longer life
+            Size::Small => 5.6,   // 30% shorter life (8x base multiplier)
+            Size::Medium => 8.0,  // Normal lifespan (8x base multiplier)
+            Size::Large => 11.2,  // 40% longer life (8x base multiplier)
         }
     }
     
@@ -108,21 +108,21 @@ pub enum TileType {
     Dirt,
     Sand,
     Water(u8),        // Water with depth/pressure (0-255), affects flow behavior
-    PlantStem(u8, Size),   // Main structural support, age 0-255, size
-    PlantLeaf(u8, Size),   // Photosynthesis organs, age 0-150, size
-    PlantBud(u8, Size),    // Growth points that become branches/flowers, age 0-50, size
-    PlantBranch(u8, Size), // Diagonal growth branches, age 0-120, size
-    PlantFlower(u8, Size), // Reproductive organs, age 0-100, size
+    PlantStem(u8, Size),   // Main structural support, age 0-255 (dies at ~100*lifespan_8x), size
+    PlantLeaf(u8, Size),   // Photosynthesis organs, age 0-255 (dies at ~50*lifespan_8x), size
+    PlantBud(u8, Size),    // Growth points that become branches/flowers, age 0-255 (dies at 50), size
+    PlantBranch(u8, Size), // Diagonal growth branches, age 0-255 (dies at ~100*lifespan_8x), size
+    PlantFlower(u8, Size), // Reproductive organs, age 0-255 (dies at ~80*lifespan_8x), size
     PlantWithered(u8, Size), // Dying plant part, age 0-30 before becoming nutrient, size
     PlantDiseased(u8, Size), // Diseased plant part, spreads to nearby plants, age 0-60, size
-    PlantRoot(u8, Size),     // Underground root system for nutrient absorption, age 0-200, size
-    PillbugHead(u8, Size),    // Head segment of pillbug, age 0-180, size
-    PillbugBody(u8, Size),    // Body segment of pillbug, age 0-180, size
-    PillbugLegs(u8, Size),    // Leg segment of pillbug, age 0-180, size
+    PlantRoot(u8, Size),     // Underground root system for nutrient absorption, age 0-255 (dies at ~200*lifespan_8x), size
+    PillbugHead(u8, Size),    // Head segment of pillbug, age 0-255 (dies at ~150*lifespan_8x), size
+    PillbugBody(u8, Size),    // Body segment of pillbug, age 0-255 (dies at ~150*lifespan_8x), size
+    PillbugLegs(u8, Size),    // Leg segment of pillbug, age 0-255 (dies at ~150*lifespan_8x), size
     PillbugDecaying(u8, Size), // Dying pillbug part, age 0-20 before becoming nutrient, size
     Nutrient,
-    Seed(u8, Size),           // Plant seed that can be dispersed by wind, age 0-100, size
-    Spore(u8),                // Fungal/bacterial spores, age 0-50, carried by wind
+    Seed(u8, Size),           // Plant seed that can be dispersed by wind, age 0-255 (dies at 100), size
+    Spore(u8),                // Fungal/bacterial spores, age 0-255 (dies at 50), carried by wind
 }
 
 impl TileType {

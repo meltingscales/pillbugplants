@@ -34,9 +34,11 @@ All entities follow consistent aging patterns:
 
 ### Size Variation System
 Three size categories affect all organisms:
-- **Small**: 30% faster growth, 30% shorter life, modified display characters
-- **Medium**: Baseline values, normal display
-- **Large**: 20% slower growth, 40% longer life, enhanced display characters
+- **Small**: 30% faster growth, 30% shorter life (5.6x lifespan multiplier), modified display characters
+- **Medium**: Baseline values (8x lifespan multiplier), normal display
+- **Large**: 20% slower growth, 40% longer life (11.2x lifespan multiplier), enhanced display characters
+
+**Note**: Lifespans have been extended 8x from original values to allow for longer ecosystem observation.
 
 ### Plant Architecture
 **Multi-segment design** with specialized functions:
@@ -216,7 +218,10 @@ Four distinct biome types create **microenvironmental diversity**:
 
 ### Latest Updates (Current Session)
 - **Water wetting earth**: Water can now soak into dirt/sand instead of just accumulating
-- **Gravity for unsupported entities**: Pillbugs fall if they lose all ground/plant/connected support
+- **Gravity for unsupported entities**: Pillbugs and plants fall as connected groups when unsupported
+- **Group-based falling**: Connected organisms maintain structural integrity during gravity events
+- **Extended lifespans**: All organisms now live 8x longer for better ecosystem observation
+- **Race condition fix**: Pillbugs no longer grow extra segments while falling (stability check added)
 - **Enhanced physics**: Better support detection for multi-segment organisms
 - **Improved realism**: More natural water behavior and object physics
 
