@@ -2,6 +2,21 @@ use std::fmt;
 use rand::{Rng, seq::SliceRandom, prelude::IteratorRandom};
 use crate::types::{TileType, Size, random_size, MovementStrategy, Season, Biome, random_biome};
 
+// Optimization: Track tile changes without full array clones
+#[derive(Debug)]
+struct TileChange {
+    x: usize,
+    y: usize,
+    old_tile: TileType,
+    new_tile: TileType,
+}
+
+impl TileChange {
+    fn new(x: usize, y: usize, old_tile: TileType, new_tile: TileType) -> Self {
+        Self { x, y, old_tile, new_tile }
+    }
+}
+
 pub struct World {
     pub tiles: Vec<Vec<TileType>>,
     pub biome_map: Vec<Vec<Biome>>, // Biome information for each region
@@ -15,6 +30,8 @@ pub struct World {
     pub humidity: f32,         // 0.0 to 1.0, affects rain and plant growth
     pub wind_direction: f32,   // 0.0 to 2π, direction of wind in radians
     pub wind_strength: f32,    // 0.0 to 1.0, strength of wind
+    // Performance optimization: reuse buffers to reduce allocations
+    tile_changes: Vec<TileChange>,
 }
 
 impl World {
@@ -34,6 +51,7 @@ impl World {
             humidity: 0.5,       // Moderate humidity
             wind_direction: 0.0, // Start with easterly wind
             wind_strength: 0.3,  // Moderate wind strength
+            tile_changes: Vec::with_capacity(1000), // Pre-allocate for common case
         };
         
         world.generate_biome_map();
@@ -337,6 +355,25 @@ impl World {
                         self.tiles[0][x] = TileType::Water(rain_depth);
                     }
                 }
+            }
+        }
+    }
+    
+    // Performance optimization: Apply tile changes efficiently without full clones
+    fn apply_tile_changes(&mut self) {
+        for change in self.tile_changes.drain(..) {
+            if change.x < self.width && change.y < self.height {
+                self.tiles[change.y][change.x] = change.new_tile;
+            }
+        }
+    }
+    
+    // Helper to queue a tile change for later application
+    fn queue_tile_change(&mut self, x: usize, y: usize, new_tile: TileType) {
+        if x < self.width && y < self.height {
+            let old_tile = self.tiles[y][x];
+            if old_tile != new_tile {
+                self.tile_changes.push(TileChange::new(x, y, old_tile, new_tile));
             }
         }
     }
@@ -740,27 +777,36 @@ impl World {
     }
     
     fn diffuse_nutrients(&mut self) {
-        // Nutrients spread slowly
+        // Nutrients spread slowly - optimized to avoid full array clone
         let mut rng = rand::thread_rng();
-        let mut new_tiles = self.tiles.clone();
         
+        // Collect nutrient positions first to avoid iterator conflicts
+        let mut nutrient_positions = Vec::new();
         for y in 1..self.height - 1 {
             for x in 1..self.width - 1 {
-                if self.tiles[y][x] == TileType::Nutrient && rng.gen_bool(0.1) {
-                    let directions = [(-1, 0), (1, 0), (0, -1), (0, 1)];
-                    if let Some(&(dx, dy)) = directions.choose(&mut rng) {
-                        let nx = (x as i32 + dx) as usize;
-                        let ny = (y as i32 + dy) as usize;
-                        if self.tiles[ny][nx] == TileType::Empty {
-                            new_tiles[y][x] = TileType::Empty;
-                            new_tiles[ny][nx] = TileType::Nutrient;
-                        }
+                if self.tiles[y][x] == TileType::Nutrient {
+                    nutrient_positions.push((x, y));
+                }
+            }
+        }
+        
+        // Process diffusion using change queue
+        for (x, y) in nutrient_positions {
+            if rng.gen_bool(0.1) {
+                let directions = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+                if let Some(&(dx, dy)) = directions.choose(&mut rng) {
+                    let nx = (x as i32 + dx) as usize;
+                    let ny = (y as i32 + dy) as usize;
+                    if nx < self.width && ny < self.height && self.tiles[ny][nx] == TileType::Empty {
+                        self.queue_tile_change(x, y, TileType::Empty);
+                        self.queue_tile_change(nx, ny, TileType::Nutrient);
                     }
                 }
             }
         }
         
-        self.tiles = new_tiles;
+        // Apply all changes at once
+        self.apply_tile_changes();
     }
     
     fn update_life(&mut self) {

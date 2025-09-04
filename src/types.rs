@@ -51,7 +51,7 @@ impl MovementStrategy {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Size {
     Small = 0,   // Faster growth, shorter life, weaker
     Medium = 1,  // Normal values  
@@ -102,7 +102,7 @@ impl Size {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TileType {
     Empty,
     Dirt,
