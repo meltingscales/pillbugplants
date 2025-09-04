@@ -1,85 +1,57 @@
 # Pillbugplants TODO
 
 ## Current Status
-- Full ecosystem simulation working
-- Multi-segment pillbugs with coordinated movement
-- Complete plant lifecycle with buds and flowers
-- Realistic physics for sand and water
-- Day/night cycle with rain
-- Nutrient cycling
-- Size variations affecting behavior
-- Pillbug reproduction and growth
-- Plant support system
+- ✅ Basic simulation engine with physics sandbox
+- ✅ Multi-size entities (plants and pillbugs with small/medium/large variants)
+- ✅ Plant growth system with stems, leaves, buds, branches, flowers
+- ✅ Y-shaped plant branching system
+- ✅ Pillbug multi-segment bodies (head-body-legs)
+- ✅ Size-based feeding efficiency for pillbugs
+- ✅ Intelligent movement with MovementStrategy enum
+- ✅ Day/night cycle with rain
+- ✅ Nutrient diffusion system
+- ✅ Reproduction systems for both plants and pillbugs
 
-## Completed Features
-- [x] Explore existing codebase structure
-- [x] Check current build status
-- [x] Review existing simulation features
-- [x] Identify areas for improvement
-- [x] Add multi-segment pillbugs with body and legs
-- [x] Implement pillbug movement and wandering behavior
-- [x] Add plant buds and flowers for reproduction
-- [x] Implement sand physics with pile formation
-- [x] Add pillbug reproduction
-- [x] Improve plant growth patterns
-- [x] Add water flow physics
-- [x] Implement plant support checking
-- [x] Add intelligent pillbug movement with MovementStrategy
-- [x] Implement Y-shaped plant branching system
-- [x] Add size-based feeding efficiency for pillbugs
+## Immediate Improvements
+- [ ] Implement `Avoid` movement strategy for pillbugs (currently unused)
+- [ ] Add predator or danger detection system
+- [ ] Improve plant root system for better nutrient absorption
+- [ ] Add seasonal changes affecting growth rates
+- [ ] Implement plant diseases/infections that spread
 
-## Immediate Priorities
-- [x] Implement MovementStrategy enum for better pillbug AI
-- [x] Add plant branching patterns (Y-shaped growth)
-- [x] Improve size-based feeding efficiency
-- [ ] Add plant-pillbug shelter interactions
-- [x] Enhance bud development (branch vs flower choice)
+## Engine Enhancements
+- [ ] Optimize physics calculations for larger worlds
+- [ ] Add more sophisticated collision detection
+- [ ] Implement water flow patterns and pooling
+- [ ] Add wind effects on seeds and small particles
+- [ ] Create biome variations (wet/dry areas)
 
-## Potential Future Improvements
-- [ ] Add seasonal variations
-- [ ] Implement pillbug social behavior (clustering, trails)
-- [ ] Add more plant species (grasses, trees, shrubs)
-- [ ] Create food chain dynamics
-- [ ] Add underground root systems
-- [ ] Implement weather patterns beyond rain
-- [ ] Genetic traits and inheritance
-- [ ] Disease and infection mechanics
-- [ ] Ecosystem succession over time
+## Simulation Features
+- [ ] Add more plant species with different growth patterns
+- [ ] Implement symbiotic relationships between species
+- [ ] Add decomposer organisms (bacteria, fungi)
+- [ ] Create food web dynamics
+- [ ] Add territorial behavior for pillbugs
 
-## Design Notes
+## UI/UX Improvements
+- [ ] Add pause/resume functionality
+- [ ] Implement speed controls
+- [ ] Create detailed entity inspection mode
+- [ ] Add simulation statistics panel
+- [ ] Implement save/load functionality
 
-### Pillbug Structure
-- Head: Main control segment, eating, reproduction
-- Body: Middle segment, grows at age 10
-- Legs: Movement segment, grows at age 20
-- Full lifecycle: birth → growth → reproduction → aging → decay
+## Testing & Quality
+- [ ] Add unit tests for core simulation logic
+- [ ] Create benchmark tests for performance
+- [ ] Add integration tests for complex scenarios
+- [ ] Implement automated regression testing
 
-### Plant Structure
-- Stem: Main support, grows upward, needs ground support
-- Leaves: Photosynthesis, side growth
-- Buds: Growth points at age 30+ that become flowers
-- Flowers: Reproduction, spread seeds based on size
-- Withered: Dying state before becoming nutrients
+## Documentation
+- [ ] Create comprehensive API documentation
+- [ ] Write simulation behavior guide
+- [ ] Add contributing guidelines
+- [ ] Create performance optimization guide
 
-### Physics
-- Gravity affects sand and water
-- Water flows sideways when blocked
-- Sand forms natural piles
-- Plant parts check for structural support
-- Unsupported plants fall or wither
-
-### Ecosystem Dynamics
-- Closed nutrient loop
-- Size variations affect lifespan and behavior
-- Day/night affects rain probability
-- Well-fed pillbugs reproduce
-- Plants seed new areas
-- Intelligent pillbug AI (food-seeking, social, exploration behaviors)
-- Y-shaped plant branching creates complex tree structures
-- Size-based feeding efficiency creates ecological niches
-
-### Recent Enhancements (2025-09-04)
-- **Movement AI**: Pillbugs now actively seek food, sometimes socialize, and explore intelligently
-- **Plant Branching**: Buds mature into branches (60%) or flowers (40%), creating Y-shaped growth
-- **Feeding Efficiency**: Large pillbugs excel with big plants, small pillbugs efficient with small food
-- **Branch Nutrition**: Branches provide more nutrition but are harder to eat than leaves
+## Current Warnings to Address
+- [ ] `Avoid` variant in MovementStrategy is never constructed
+- [ ] `is_plant`, `is_pillbug`, `get_size` methods are never used

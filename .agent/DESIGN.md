@@ -1,56 +1,97 @@
-# Design Notes - Pillbug Plants
+# Pillbugplants Design Document
 
-## Core Architecture
-- Tick-based simulation with deterministic updates
-- Dynamic ASCII tile grid rendered with ratatui (adapts to terminal size)
-- Each tile can hold one entity type at a time
-- All updates happen in parallel using tile cloning to avoid conflicts
+## Core Concept
+A falling-sand style physics sandbox simulating a miniature ecosystem inspired by playground observations of pillbugs and plant life. The simulation runs deterministically with ASCII art rendering via ratatui.
 
-## Entity Types
-- **Empty**: Nothing
-- **Dirt**: Static ground material  
-- **Sand**: Falls due to gravity
-- **Water**: Falls and spreads horizontally
-- **Plant(age)**: Ages from 0-200, reproduces with nutrients during day
-- **Pillbug(age)**: Ages from 0-180, eats plants, reproduces when fed
-- **Nutrient**: Diffuses randomly, consumed by plants
+## Architecture
 
-## Physics System
-- Gravity affects sand, water, plants, and pillbugs
-- Water spreads horizontally when blocked
-- Plants/pillbugs fall unless supported by any of 8 adjacent solid tiles
-- Water displacement when entities fall into it
-- All physics updates happen bottom-to-top to prevent double-processing
+### World System
+- **Deterministic**: Every tick updates physics in the same order
+- **Grid-based**: Fixed-size 2D grid where each cell contains a TileType
+- **Physics**: Gravity affects sand, water; entities have support checking
+- **Day/Night Cycle**: Affects plant photosynthesis and rain probability
 
-## Life Systems
-### Day/Night Cycle
-- Sine wave cycle affects plant reproduction and rain probability
-- Plants only reproduce during daylight hours
-- Rain more likely during nighttime
+### Entity Types
 
-### Aging & Death
-- Plants age +1/tick, die at 200, decompose to nutrients
-- Pillbugs age +1/tick, die at 180, decompose to nutrients  
-- Nutrients slow aging: plants -5, pillbugs -10
-- Starvation accelerates aging: plants +1, pillbugs +2
+#### Plants (Multi-size organisms)
+- **PlantStem**: Main structural support, ages and can extend upward
+- **PlantLeaf**: Photosynthesis organs, shorter lifespan
+- **PlantBud**: Growth points that mature into branches or flowers
+- **PlantBranch**: Diagonal growth creating Y-shaped branching patterns
+- **PlantFlower**: Reproductive organs that spread seeds
+- **PlantWithered**: Dying plant matter that decomposes into nutrients
 
-### Reproduction
-- Plants: Need nutrients + daylight, spread to adjacent empty tiles
-- Pillbugs: Need to eat plants, 50% chance to leave baby when moving
+Size variants (Small/Medium/Large):
+- Small: Fast growth, short life, efficient reproduction
+- Medium: Balanced stats
+- Large: Slow growth, long life, wide seed dispersal
 
-### Ecosystem Balance
-- Closed nutrient loop: death → nutrients → plant growth → pillbug food → death
-- Rain adds water periodically to maintain moisture levels
+#### Pillbugs (Multi-segment creatures)
+- **PillbugHead**: Controls movement and feeding behavior
+- **PillbugBody**: Main body segment, grows as pillbug matures
+- **PillbugLegs**: Locomotive segment, affects movement speed
+- **PillbugDecaying**: Dying pillbug parts that become nutrients
 
-## Visual System
-- Age-based color fading (older entities get darker)
-- Rain intensity displayed in status bar
-- Dynamic world sizing based on terminal dimensions
-- Real-time tick counter and day/night indicator
+Size-based feeding efficiency:
+- Large pillbugs handle large food better
+- Small pillbugs are more efficient with small food
+- Mismatched sizes reduce feeding efficiency
 
-## Technical Details
-- Uses crossterm for terminal control
-- Ratatui for UI rendering  
-- Rand crate for all randomness
-- Vec<Vec<TileType>> for dynamic world sizing
-- Entity ages stored as u8 in enum variants
+#### Environmental Elements
+- **Dirt**: Solid ground providing support
+- **Sand**: Falls and forms natural piles
+- **Water**: Flows downward and spreads sideways
+- **Nutrient**: Diffuses slowly, consumed by plants
+- **Empty**: Air space
+
+### Movement System
+
+#### MovementStrategy Enum
+- **SeekFood**: Direct movement toward detected food
+- **Social**: Movement toward other pillbugs of same size  
+- **Avoid**: Movement away from dangers (not yet implemented)
+- **Explore**: Random movement for discovery
+- **Rest**: Minimal movement, energy conservation
+
+Movement probability varies by strategy and pillbug characteristics.
+
+### Life Cycle Systems
+
+#### Plant Growth
+1. **Stem Extension**: Vertical growth creating plant structure
+2. **Lateral Growth**: Leaves for photosynthesis, buds for reproduction
+3. **Branching**: Buds mature into diagonal branches (Y-shapes)
+4. **Reproduction**: Flowers spread seeds with distance based on size
+5. **Death**: Aging leads to withering and nutrient release
+
+#### Pillbug Behavior
+1. **Maturation**: Body segments grow as pillbugs age (head → body → legs)
+2. **Feeding**: Size-based efficiency eating plants and nutrients
+3. **Movement**: AI-driven behavior using movement strategies
+4. **Reproduction**: Well-fed mature pillbugs spawn offspring
+5. **Death**: Old age leads to decay and nutrient release
+
+### Physics Engine
+- **Support Checking**: Plants need structural support or they fall/wither
+- **Falling Physics**: Sand/water obey gravity with diagonal sliding
+- **Flow Dynamics**: Water spreads horizontally when blocked
+- **Nutrient Diffusion**: Slow random walk spreading nutrients
+
+### Ecosystem Dynamics
+- **Closed Loop**: Dead matter → nutrients → plant growth → pillbug food → death
+- **Population Balance**: Automatic spawning maintains minimum populations
+- **Environmental Cycles**: Day/night affects growth and rain patterns
+- **Size Inheritance**: Offspring inherit size with variation chance
+
+## Rendering
+ASCII characters with color coding:
+- Size variants use different character sets
+- Colors fade with age for visual aging
+- Terminal rendering via ratatui with real-time updates
+
+## Simulation Modes
+- **Interactive**: Full ratatui interface with user controls
+- **Headless**: Command-line simulation for testing/automation
+- **Batch**: Run N ticks and output final state
+
+This creates an emergent ecosystem where simple rules lead to complex behaviors and natural population dynamics.
