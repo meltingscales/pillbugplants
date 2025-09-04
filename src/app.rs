@@ -141,6 +141,10 @@ pub fn ui(f: &mut Frame, app: &App) {
                 Span::raw(" = Plant Flower (small/med/large)")
             ]),
             Line::from(vec![
+                Span::styled("·rR", Style::default().fg(Color::Rgb(80, 50, 30))),
+                Span::raw(" = Plant Root (small/med/large)")
+            ]),
+            Line::from(vec![
                 Span::styled("x", Style::default().fg(Color::Rgb(100, 50, 0))),
                 Span::raw(" = Plant Withered (gradual decay)")
             ]),
@@ -150,6 +154,7 @@ pub fn ui(f: &mut Frame, app: &App) {
             Line::from("  - Large flowers spread seeds farther"),
             Line::from("  - Buds mature into branches (60%) or flowers (40%)"),
             Line::from("  - Branches create Y-shaped growth patterns"),
+            Line::from("  - Roots absorb nutrients and extend toward food"),
             Line::from(""),
             Line::from("PILLBUGS (multi-segment with sizes!):"),
             Line::from(vec![

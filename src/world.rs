@@ -232,7 +232,7 @@ impl World {
                                 let ny = (y as i32 + dy) as usize;
                                 if nx < self.width && ny < self.height {
                                     match self.tiles[ny][nx] {
-                                        TileType::PlantStem(_, _) | TileType::PlantBranch(_, _) | TileType::Dirt => {
+                                        TileType::PlantStem(_, _) | TileType::PlantBranch(_, _) | TileType::PlantRoot(_, _) | TileType::Dirt => {
                                             has_support = true;
                                             break;
                                         }
@@ -264,7 +264,7 @@ impl World {
                         // Check below
                         if y + 1 < self.height {
                             match self.tiles[y + 1][x] {
-                                TileType::PlantStem(_, _) | TileType::PlantBranch(_, _) | TileType::Dirt | TileType::Sand => {
+                                TileType::PlantStem(_, _) | TileType::PlantBranch(_, _) | TileType::PlantRoot(_, _) | TileType::Dirt | TileType::Sand => {
                                     has_support = true;
                                 }
                                 _ => {}
@@ -344,7 +344,7 @@ impl World {
                         } else {
                             new_tiles[y][x] = TileType::PlantStem(new_age, size);
                             
-                            // Plant growth - grows leaves, buds, and extends
+                            // Plant growth - grows leaves, buds, roots, and extends
                             if rng.gen_bool(0.1 * growth_rate as f64) {
                                 // Try to grow upward (extend stem)
                                 if y > 0 && self.tiles[y - 1][x] == TileType::Empty && rng.gen_bool(0.3) {
@@ -355,6 +355,10 @@ impl World {
                                     new_tiles[y][x - 1] = TileType::PlantLeaf(0, size);
                                 } else if x < self.width - 1 && self.tiles[y][x + 1] == TileType::Empty && rng.gen_bool(0.4) {
                                     new_tiles[y][x + 1] = TileType::PlantLeaf(0, size);
+                                }
+                                // Grow roots downward for nutrient absorption
+                                else if y < self.height - 1 && matches!(self.tiles[y + 1][x], TileType::Empty | TileType::Dirt | TileType::Sand) && rng.gen_bool(0.5) {
+                                    new_tiles[y + 1][x] = TileType::PlantRoot(0, size);
                                 }
                                 // Grow buds that will become flowers
                                 else if y > 0 && self.tiles[y - 1][x] == TileType::Empty && rng.gen_bool(0.2) {
@@ -453,6 +457,50 @@ impl World {
                             new_tiles[y][x] = TileType::Nutrient;
                         } else {
                             new_tiles[y][x] = TileType::PlantWithered(new_age, size);
+                        }
+                    }
+                    TileType::PlantRoot(age, size) => {
+                        let new_age = age.saturating_add(1);
+                        let growth_rate = size.growth_rate_multiplier();
+                        
+                        if new_age > (200.0 * size.lifespan_multiplier()) as u8 {
+                            // Old roots wither and become nutrients
+                            new_tiles[y][x] = TileType::Nutrient;
+                        } else {
+                            new_tiles[y][x] = TileType::PlantRoot(new_age, size);
+                            
+                            // Roots actively absorb nearby nutrients
+                            let absorption_range = match size {
+                                Size::Small => 1,
+                                Size::Medium => 2,
+                                Size::Large => 3,
+                            };
+                            
+                            for dy in -(absorption_range as i32)..=(absorption_range as i32) {
+                                for dx in -(absorption_range as i32)..=(absorption_range as i32) {
+                                    let nx = (x as i32 + dx) as usize;
+                                    let ny = (y as i32 + dy) as usize;
+                                    if nx < self.width && ny < self.height {
+                                        if self.tiles[ny][nx] == TileType::Nutrient && rng.gen_bool(0.3 * growth_rate as f64) {
+                                            // Absorb nutrients and potentially extend root network
+                                            new_tiles[ny][nx] = TileType::Empty;
+                                            
+                                            // Chance to grow new root toward absorbed nutrient
+                                            if rng.gen_bool(0.4) {
+                                                let steps_x = if dx > 0 { 1 } else if dx < 0 { -1 } else { 0 };
+                                                let steps_y = if dy > 0 { 1 } else if dy < 0 { -1 } else { 0 };
+                                                let extend_x = (x as i32 + steps_x) as usize;
+                                                let extend_y = (y as i32 + steps_y) as usize;
+                                                
+                                                if extend_x < self.width && extend_y < self.height 
+                                                    && matches!(new_tiles[extend_y][extend_x], TileType::Empty | TileType::Dirt | TileType::Sand) {
+                                                    new_tiles[extend_y][extend_x] = TileType::PlantRoot(0, size);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     TileType::PillbugHead(age, size) => {
