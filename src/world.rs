@@ -54,11 +54,44 @@ impl World {
     fn generate_initial_world(&mut self) {
         let mut rng = rand::thread_rng();
         
-        // Simple ground layer
-        for y in (self.height - 8)..self.height {
+        // Create varied terrain with dirt and sand
+        for y in (self.height - 10)..self.height {
             for x in 0..self.width {
-                if rng.gen_bool(0.8) {
-                    self.tiles[y][x] = TileType::Dirt;
+                let depth = self.height - y;
+                if depth <= 2 {
+                    // Top layers have mix of dirt and sand
+                    if rng.gen_bool(0.3) {
+                        self.tiles[y][x] = TileType::Sand;
+                    } else if rng.gen_bool(0.7) {
+                        self.tiles[y][x] = TileType::Dirt;
+                    }
+                } else if depth <= 5 {
+                    // Middle layers mostly dirt
+                    if rng.gen_bool(0.85) {
+                        self.tiles[y][x] = TileType::Dirt;
+                    } else if rng.gen_bool(0.5) {
+                        self.tiles[y][x] = TileType::Sand;
+                    }
+                } else {
+                    // Deep layers all dirt
+                    if rng.gen_bool(0.95) {
+                        self.tiles[y][x] = TileType::Dirt;
+                    }
+                }
+            }
+        }
+        
+        // Add some sand dunes/piles
+        for _ in 0..3 {
+            let x = rng.gen_range(5..self.width - 5);
+            let y = self.height - 11;
+            for dx in -2..=2 {
+                for dy in 0..=1 {
+                    let nx = (x as i32 + dx) as usize;
+                    let ny = y + dy;
+                    if nx < self.width && ny < self.height && rng.gen_bool(0.6) {
+                        self.tiles[ny][nx] = TileType::Sand;
+                    }
                 }
             }
         }
@@ -66,17 +99,26 @@ impl World {
         // Add a few initial plants
         for _ in 0..3 {
             let x = rng.gen_range(0..self.width);
-            let y = rng.gen_range(self.height - 10..self.height - 3);
+            let y = rng.gen_range(self.height - 12..self.height - 3);
             if self.tiles[y][x] == TileType::Empty {
                 let size = random_size(&mut rng);
                 self.tiles[y][x] = TileType::PlantStem(10, size);
             }
         }
         
+        // Add nutrients scattered around
+        for _ in 0..5 {
+            let x = rng.gen_range(0..self.width);
+            let y = rng.gen_range(self.height - 15..self.height - 2);
+            if self.tiles[y][x] == TileType::Empty {
+                self.tiles[y][x] = TileType::Nutrient;
+            }
+        }
+        
         // Add a few initial pillbugs with full body segments
         for _ in 0..2 {
             let x = rng.gen_range(2..self.width - 2);
-            let y = rng.gen_range(self.height - 8..self.height - 2);
+            let y = rng.gen_range(self.height - 12..self.height - 2);
             if self.tiles[y][x] == TileType::Empty {
                 let size = random_size(&mut rng);
                 self.spawn_pillbug(x, y, size, 20);
@@ -99,15 +141,67 @@ impl World {
     
     fn update_physics(&mut self) {
         let mut new_tiles = self.tiles.clone();
+        let mut rng = rand::thread_rng();
         
-        // Simple gravity - water and sand fall
+        // Process physics from bottom to top for proper stacking
         for y in (0..self.height - 1).rev() {
             for x in 0..self.width {
                 match self.tiles[y][x] {
-                    TileType::Sand | TileType::Water => {
-                        if self.tiles[y + 1][x] == TileType::Empty {
+                    TileType::Sand => {
+                        // Sand falls straight down or diagonally to form piles
+                        if new_tiles[y + 1][x] == TileType::Empty {
                             new_tiles[y][x] = TileType::Empty;
-                            new_tiles[y + 1][x] = self.tiles[y][x];
+                            new_tiles[y + 1][x] = TileType::Sand;
+                        } else if !matches!(new_tiles[y + 1][x], TileType::Empty | TileType::Water) {
+                            // Try to slide diagonally if blocked
+                            // Randomly choose left or right first for natural piling
+                            let directions = if rng.gen_bool(0.5) {
+                                vec![(-1, 1), (1, 1)]
+                            } else {
+                                vec![(1, 1), (-1, 1)]
+                            };
+                            
+                            for (dx, dy) in directions {
+                                let nx = (x as i32 + dx) as usize;
+                                let ny = y + dy;
+                                if nx < self.width && ny < self.height {
+                                    if new_tiles[ny][nx] == TileType::Empty {
+                                        new_tiles[y][x] = TileType::Empty;
+                                        new_tiles[ny][nx] = TileType::Sand;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    TileType::Water => {
+                        // Water flows down and spreads sideways
+                        if new_tiles[y + 1][x] == TileType::Empty {
+                            new_tiles[y][x] = TileType::Empty;
+                            new_tiles[y + 1][x] = TileType::Water;
+                        } else if !matches!(new_tiles[y + 1][x], TileType::Empty) {
+                            // Water spreads sideways when blocked
+                            // Try diagonal flow first
+                            let directions = if rng.gen_bool(0.5) {
+                                vec![(-1, 1), (1, 1), (-1, 0), (1, 0)]
+                            } else {
+                                vec![(1, 1), (-1, 1), (1, 0), (-1, 0)]
+                            };
+                            
+                            for (dx, dy) in directions {
+                                let nx = (x as i32 + dx) as usize;
+                                let ny = (y as i32 + dy) as usize;
+                                if nx < self.width && ny < self.height {
+                                    if new_tiles[ny][nx] == TileType::Empty {
+                                        // Higher chance to flow sideways for water
+                                        if dy == 0 && rng.gen_bool(0.7) || dy == 1 {
+                                            new_tiles[y][x] = TileType::Empty;
+                                            new_tiles[ny][nx] = TileType::Water;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     _ => {}
