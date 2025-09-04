@@ -1,5 +1,5 @@
 use std::fmt;
-use rand::{Rng, seq::SliceRandom};
+use rand::{Rng, seq::SliceRandom, prelude::IteratorRandom};
 use crate::types::{TileType, Size, random_size, MovementStrategy, Season, Biome, random_biome};
 
 pub struct World {
@@ -13,6 +13,8 @@ pub struct World {
     pub season_cycle: f32,     // 0.0 = Spring, 0.25 = Summer, 0.5 = Fall, 0.75 = Winter
     pub temperature: f32,      // -1.0 to 1.0, affects growth rates
     pub humidity: f32,         // 0.0 to 1.0, affects rain and plant growth
+    pub wind_direction: f32,   // 0.0 to 2π, direction of wind in radians
+    pub wind_strength: f32,    // 0.0 to 1.0, strength of wind
 }
 
 impl World {
@@ -30,6 +32,8 @@ impl World {
             season_cycle: 0.0,   // Start in spring
             temperature: 0.3,    // Mild spring temperature
             humidity: 0.5,       // Moderate humidity
+            wind_direction: 0.0, // Start with easterly wind
+            wind_strength: 0.3,  // Moderate wind strength
         };
         
         world.generate_biome_map();
@@ -66,6 +70,7 @@ impl World {
         
         self.spawn_rain();
         self.update_physics();
+        self.process_wind_effects();
         self.check_plant_support();
         self.diffuse_nutrients();
         self.update_life();
@@ -118,6 +123,35 @@ impl World {
         // Clamp values to valid ranges
         self.temperature = self.temperature.clamp(-1.0, 1.0);
         self.humidity = self.humidity.clamp(0.1, 1.0);
+        
+        // Update wind patterns - varies by season and has some random variation
+        let target_wind_direction = match self.get_current_season() {
+            Season::Spring => 0.5,      // Easterly winds (spring breezes)
+            Season::Summer => 1.5,      // Southerly winds (hot air rising)
+            Season::Fall => 4.0,        // Westerly winds (storm systems)
+            Season::Winter => 2.5,      // Northerly winds (cold fronts)
+        };
+        
+        let target_wind_strength = match self.get_current_season() {
+            Season::Spring => 0.4 + self.humidity * 0.3,  // Variable spring winds
+            Season::Summer => 0.2 + (1.0 - self.humidity) * 0.4, // Hot, dry winds
+            Season::Fall => 0.6 + self.rain_intensity * 0.4,     // Storm-driven winds
+            Season::Winter => 0.5 + (1.0 + self.temperature) * 0.2, // Cold winds
+        };
+        
+        // Add some natural variation
+        let wind_dir_variation = ((self.tick as f32 * 0.003).sin() + (self.tick as f32 * 0.007).cos()) * 0.5;
+        let wind_str_variation = ((self.tick as f32 * 0.005).sin()) * 0.1;
+        
+        // Gradually adjust wind toward targets
+        let target_dir_with_var = (target_wind_direction + wind_dir_variation) % (2.0 * std::f32::consts::PI);
+        let target_str_with_var = (target_wind_strength + wind_str_variation).clamp(0.0, 1.0);
+        
+        self.wind_direction += (target_dir_with_var - self.wind_direction) * 0.05; // Slow change
+        self.wind_strength += (target_str_with_var - self.wind_strength) * 0.08;   // Slightly faster
+        
+        self.wind_direction = self.wind_direction % (2.0 * std::f32::consts::PI);
+        self.wind_strength = self.wind_strength.clamp(0.0, 1.0);
     }
     
     fn get_seasonal_growth_modifier(&self) -> f32 {
@@ -489,6 +523,133 @@ impl World {
         }
     }
     
+    /// Process wind effects on seeds, spores, light particles, and water droplets
+    fn process_wind_effects(&mut self) {
+        if self.wind_strength < 0.1 {
+            return; // No significant wind
+        }
+        
+        let mut new_tiles = self.tiles.clone();
+        let mut rng = rand::thread_rng();
+        
+        // Calculate wind direction components
+        let wind_x = self.wind_direction.cos();
+        let wind_y = self.wind_direction.sin();
+        
+        // Process from top to bottom, left to right for consistent wind direction
+        for y in 0..self.height {
+            for x in 0..self.width {
+                match self.tiles[y][x] {
+                    tile if tile.is_wind_dispersible() || tile.is_light_particle() => {
+                        self.process_wind_particle(x, y, tile, &mut new_tiles, &mut rng, wind_x, wind_y);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        
+        self.tiles = new_tiles;
+    }
+    
+    /// Process individual particle movement due to wind
+    fn process_wind_particle(&self, x: usize, y: usize, particle: TileType, 
+                           new_tiles: &mut Vec<Vec<TileType>>, rng: &mut impl Rng, 
+                           wind_x: f32, wind_y: f32) {
+        // Check if this particle should be affected by wind
+        let wind_susceptibility = match particle {
+            TileType::Seed(_, Size::Small) => 0.9,    // Small seeds very susceptible
+            TileType::Seed(_, Size::Medium) => 0.6,   // Medium seeds moderately susceptible
+            TileType::Seed(_, Size::Large) => 0.3,    // Large seeds less susceptible
+            TileType::Spore(_) => 1.0,                // Spores very light
+            TileType::Nutrient => 0.4,                // Nutrients moderately affected
+            TileType::Water(depth) if depth <= 30 => (30 - depth) as f32 / 30.0, // Light water droplets
+            _ => return, // Not wind-affected
+        };
+        
+        // Calculate movement probability based on wind strength and susceptibility
+        let movement_chance = self.wind_strength * wind_susceptibility * 0.8;
+        
+        if !rng.gen_bool(movement_chance as f64) {
+            return; // No movement this tick
+        }
+        
+        // Calculate target position based on wind direction
+        // Add some randomness to make wind dispersal more natural
+        let random_x = rng.gen_range(-0.3..0.3);
+        let random_y = rng.gen_range(-0.3..0.3);
+        
+        let target_x = x as f32 + wind_x * self.wind_strength * 2.0 + random_x;
+        let target_y = y as f32 + wind_y * self.wind_strength * 2.0 + random_y;
+        
+        // Clamp to world bounds
+        let target_x = target_x.round() as i32;
+        let target_y = target_y.round() as i32;
+        
+        if target_x < 0 || target_x >= self.width as i32 || 
+           target_y < 0 || target_y >= self.height as i32 {
+            // Particle blown out of world - remove it
+            new_tiles[y][x] = TileType::Empty;
+            return;
+        }
+        
+        let target_x = target_x as usize;
+        let target_y = target_y as usize;
+        
+        // Check if target position is available
+        match new_tiles[target_y][target_x] {
+            TileType::Empty => {
+                // Move particle to new location
+                new_tiles[y][x] = TileType::Empty;
+                new_tiles[target_y][target_x] = particle;
+            }
+            TileType::Water(depth) if depth <= 50 => {
+                // Light water can be displaced by wind particles
+                if particle.is_light_particle() {
+                    new_tiles[y][x] = TileType::Empty;
+                    new_tiles[target_y][target_x] = particle;
+                    
+                    // Try to move the displaced water to adjacent positions
+                    self.try_displace_water(target_x, target_y, TileType::Water(depth), new_tiles, rng);
+                }
+            }
+            _ => {
+                // Target blocked, try adjacent positions
+                let adjacent_positions = [
+                    (target_x.saturating_sub(1), target_y),
+                    (target_x.saturating_add(1).min(self.width - 1), target_y),
+                    (target_x, target_y.saturating_sub(1)),
+                    (target_x, target_y.saturating_add(1).min(self.height - 1)),
+                ];
+                
+                for (adj_x, adj_y) in adjacent_positions.iter() {
+                    if new_tiles[*adj_y][*adj_x] == TileType::Empty {
+                        new_tiles[y][x] = TileType::Empty;
+                        new_tiles[*adj_y][*adj_x] = particle;
+                        return;
+                    }
+                }
+                // No adjacent space available - particle stays put
+            }
+        }
+    }
+    
+    /// Helper function to try displacing water when wind particles collide
+    fn try_displace_water(&self, x: usize, y: usize, water: TileType, 
+                         new_tiles: &mut Vec<Vec<TileType>>, rng: &mut impl Rng) {
+        let directions = [(0, 1), (-1, 0), (1, 0), (0, -1)]; // Down, left, right, up priority
+        
+        if let Some((dx, dy)) = directions.iter().choose(rng) {
+            let new_x = (x as i32 + dx) as usize;
+            let new_y = (y as i32 + dy) as usize;
+            
+            if new_x < self.width && new_y < self.height && new_tiles[new_y][new_x] == TileType::Empty {
+                new_tiles[new_y][new_x] = water;
+                return;
+            }
+        }
+        // If no space found, water evaporates due to wind dispersal
+    }
+    
     fn check_plant_support(&mut self) {
         let mut new_tiles = self.tiles.clone();
         let mut rng = rand::thread_rng();
@@ -721,24 +882,29 @@ impl World {
                         } else {
                             new_tiles[y][x] = TileType::PlantFlower(new_age, size);
                             
-                            // Flowers spread seeds - more active in good weather
+                            // Flowers produce seeds that can be dispersed by wind
                             let biome = self.get_biome_at(x, y);
                             let seasonal_growth_rate = self.get_seasonal_growth_modifier() 
                                 * size.growth_rate_multiplier() 
                                 * biome.plant_growth_modifier();
-                            if rng.gen_bool((0.05 * seasonal_growth_rate).min(1.0) as f64) {
-                                let spread_distance = match size {
-                                    Size::Small => 3,
-                                    Size::Medium => 5,
-                                    Size::Large => 7,
-                                };
-                                let dx = rng.gen_range(-(spread_distance as i32)..=spread_distance);
-                                let dy = rng.gen_range(0..spread_distance);
-                                let nx = (x as i32 + dx) as usize;
-                                let ny = (y as i32 + dy as i32) as usize;
-                                if nx < self.width && ny < self.height && self.tiles[ny][nx] == TileType::Empty {
-                                    let new_size = if rng.gen_bool(0.7) { size } else { random_size(&mut rng) };
-                                    new_tiles[ny][nx] = TileType::PlantStem(0, new_size);
+                            
+                            // Higher chance during windy conditions for natural dispersal
+                            let wind_boost = 1.0 + (self.wind_strength * 2.0);
+                            let seed_chance = (0.08 * seasonal_growth_rate * wind_boost).min(1.0);
+                            
+                            if rng.gen_bool(seed_chance as f64) {
+                                // Try to place seed near the flower
+                                let nearby_positions = [
+                                    (x.saturating_sub(1), y), (x.saturating_add(1), y),
+                                    (x, y.saturating_sub(1)), (x, y.saturating_add(1)),
+                                    (x.saturating_sub(1), y.saturating_sub(1)), (x.saturating_add(1), y.saturating_add(1)),
+                                ];
+                                
+                                if let Some((nx, ny)) = nearby_positions.iter().choose(&mut rng) {
+                                    if *nx < self.width && *ny < self.height && new_tiles[*ny][*nx] == TileType::Empty {
+                                        let seed_size = if rng.gen_bool(0.7) { size } else { random_size(&mut rng) };
+                                        new_tiles[*ny][*nx] = TileType::Seed(0, seed_size);
+                                    }
                                 }
                             }
                         }
@@ -747,6 +913,21 @@ impl World {
                         let new_age = age.saturating_add(2);
                         if new_age > 30 {
                             new_tiles[y][x] = TileType::Nutrient;
+                            
+                            // Sometimes generate spores from decaying organic matter
+                            if rng.gen_bool(0.1) && self.wind_strength > 0.2 {
+                                // Try to place spore in nearby empty space
+                                let spore_positions = [
+                                    (x.saturating_sub(1), y), (x.saturating_add(1), y),
+                                    (x, y.saturating_sub(1)), (x, y.saturating_add(1)),
+                                ];
+                                
+                                if let Some((sx, sy)) = spore_positions.iter().choose(&mut rng) {
+                                    if *sx < self.width && *sy < self.height && new_tiles[*sy][*sx] == TileType::Empty {
+                                        new_tiles[*sy][*sx] = TileType::Spore(0);
+                                    }
+                                }
+                            }
                         } else {
                             new_tiles[y][x] = TileType::PlantWithered(new_age, size);
                         }
@@ -759,6 +940,22 @@ impl World {
                             new_tiles[y][x] = TileType::PlantWithered(0, size);
                         } else {
                             new_tiles[y][x] = TileType::PlantDiseased(new_age, size);
+                            
+                            // Diseased plants actively spread spores when windy
+                            if new_age > 10 && rng.gen_bool((0.05 + self.wind_strength * 0.1) as f64) {
+                                // Generate spores that spread disease
+                                let spore_positions = [
+                                    (x.saturating_sub(1), y), (x.saturating_add(1), y),
+                                    (x, y.saturating_sub(1)), (x, y.saturating_add(1)),
+                                    (x.saturating_sub(1), y.saturating_sub(1)), (x.saturating_add(1), y.saturating_sub(1)),
+                                ];
+                                
+                                if let Some((sx, sy)) = spore_positions.iter().choose(&mut rng) {
+                                    if *sx < self.width && *sy < self.height && new_tiles[*sy][*sx] == TileType::Empty {
+                                        new_tiles[*sy][*sx] = TileType::Spore(0);
+                                    }
+                                }
+                            }
                             
                             // Disease spreads to nearby healthy plants
                             let spread_chance = 0.02 * (1.0 + new_age as f32 / 60.0); // Higher chance as disease progresses
@@ -985,6 +1182,78 @@ impl World {
                 
                 if rng.gen_bool(movement_speed) {
                     self.move_pillbug(&mut new_tiles, x, y, size, age);
+                }
+            }
+        }
+        
+        // Process seed aging, germination, and spore lifecycle
+        for y in 0..self.height {
+            for x in 0..self.width {
+                match self.tiles[y][x] {
+                    TileType::Seed(age, size) => {
+                        let new_age = age.saturating_add(1);
+                        if new_age > 100 {
+                            // Old seeds decay into nutrients
+                            new_tiles[y][x] = TileType::Nutrient;
+                        } else {
+                            new_tiles[y][x] = TileType::Seed(new_age, size);
+                            
+                            // Seeds can germinate under good conditions
+                            let biome = self.get_biome_at(x, y);
+                            let seasonal_growth_rate = self.get_seasonal_growth_modifier() 
+                                * size.growth_rate_multiplier() 
+                                * biome.plant_growth_modifier();
+                            
+                            // Germination requires stable conditions (not too windy, good moisture)
+                            let wind_penalty = 1.0 - (self.wind_strength * 0.5);
+                            let germination_chance = (0.03 * seasonal_growth_rate * wind_penalty).min(1.0);
+                            
+                            if rng.gen_bool(germination_chance as f64) {
+                                // Check if there's soil below for rooting
+                                if y + 1 < self.height && matches!(new_tiles[y + 1][x], TileType::Dirt | TileType::Sand) {
+                                    new_tiles[y][x] = TileType::PlantStem(0, size);
+                                    // Add initial root
+                                    if rng.gen_bool(0.7) {
+                                        new_tiles[y + 1][x] = TileType::PlantRoot(0, size);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    TileType::Spore(age) => {
+                        let new_age = age.saturating_add(1);
+                        if new_age > 50 {
+                            // Spores fade away
+                            new_tiles[y][x] = TileType::Empty;
+                        } else {
+                            new_tiles[y][x] = TileType::Spore(new_age);
+                            
+                            // Spores can occasionally cause plant disease
+                            if new_age > 20 && rng.gen_bool(0.02) {
+                                // Look for nearby plants to infect
+                                for dy in -1..=1 {
+                                    for dx in -1..=1 {
+                                        let nx = (x as i32 + dx) as usize;
+                                        let ny = (y as i32 + dy) as usize;
+                                        if nx < self.width && ny < self.height {
+                                            if let TileType::PlantLeaf(plant_age, plant_size) 
+                                            | TileType::PlantStem(plant_age, plant_size) 
+                                            | TileType::PlantBranch(plant_age, plant_size) 
+                                            | TileType::PlantFlower(plant_age, plant_size) = new_tiles[ny][nx] {
+                                                // Only infect weakened (older) plants
+                                                if plant_age > 30 && rng.gen_bool(0.3) {
+                                                    new_tiles[ny][nx] = TileType::PlantDiseased(0, plant_size);
+                                                    new_tiles[y][x] = TileType::Empty; // Spore consumed
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -1341,7 +1610,9 @@ impl fmt::Display for World {
         writeln!(f, "Day/Night: {}", if self.is_day() { "Day" } else { "Night" })?;
         writeln!(f, "Season: {} | Temperature: {:.1} | Humidity: {:.1}", 
                  self.get_season_name(), self.temperature, self.humidity)?;
-        writeln!(f, "Rain intensity: {:.2}", self.rain_intensity)?;
+        writeln!(f, "Rain intensity: {:.2} | Wind: {:.1} @ {:.0}°", 
+                 self.rain_intensity, self.wind_strength, 
+                 self.wind_direction * 180.0 / std::f32::consts::PI)?;
         Ok(())
     }
 }

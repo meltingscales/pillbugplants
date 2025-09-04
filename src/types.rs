@@ -121,6 +121,8 @@ pub enum TileType {
     PillbugLegs(u8, Size),    // Leg segment of pillbug, age 0-180, size
     PillbugDecaying(u8, Size), // Dying pillbug part, age 0-20 before becoming nutrient, size
     Nutrient,
+    Seed(u8, Size),           // Plant seed that can be dispersed by wind, age 0-100, size
+    Spore(u8),                // Fungal/bacterial spores, age 0-50, carried by wind
 }
 
 impl TileType {
@@ -150,6 +152,8 @@ impl TileType {
             TileType::PillbugLegs(_, size) => size.to_char_modifier('w'),
             TileType::PillbugDecaying(_, size) => size.to_char_modifier('░'), // Decaying pillbugs
             TileType::Nutrient => '+',
+            TileType::Seed(_, size) => size.to_char_modifier('o'), // Seeds look like small buds
+            TileType::Spore(_) => '∘', // Small spores
         }
     }
     
@@ -298,6 +302,22 @@ impl TileType {
                 Color::Rgb(intensity, intensity / 3, intensity / 2) // Dark brownish-red decay color
             },
             TileType::Nutrient => Color::Magenta,
+            TileType::Seed(age, size) => {
+                let vitality = (100u16.saturating_sub(age as u16)).max(50) as u8;
+                let size_boost = match size {
+                    Size::Small => 0.8,
+                    Size::Medium => 1.0,
+                    Size::Large => 1.2,
+                };
+                let red = (vitality as f32 * 0.6 * size_boost) as u8;
+                let green = (vitality as f32 * 0.4 * size_boost) as u8;
+                let blue = (vitality as f32 * 0.2 * size_boost) as u8;
+                Color::Rgb(red, green, blue) // Brown-ish seeds
+            },
+            TileType::Spore(age) => {
+                let vitality = (50u16.saturating_sub(age as u16)).max(20) as u8;
+                Color::Rgb(vitality, vitality / 2, vitality / 3) // Fading brownish spores
+            },
         }
     }
     
@@ -335,6 +355,14 @@ impl TileType {
     
     pub fn blocks_water(self) -> bool {
         !matches!(self, TileType::Empty | TileType::Water(_))
+    }
+    
+    pub fn is_wind_dispersible(self) -> bool {
+        matches!(self, TileType::Seed(_, _) | TileType::Spore(_) | TileType::Nutrient)
+    }
+    
+    pub fn is_light_particle(self) -> bool {
+        matches!(self, TileType::Seed(_, Size::Small) | TileType::Spore(_) | TileType::Nutrient | TileType::Water(0..=30))
     }
 }
 
