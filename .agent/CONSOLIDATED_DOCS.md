@@ -217,25 +217,29 @@ Four distinct biome types create **microenvironmental diversity**:
 - **Ecosystem statistics system** with real-time monitoring and health metrics
 
 ### Latest Updates (Current Session)
-- **Performance monitoring system**: Comprehensive lag detection and system profiling
-- **Toggleable performance display**: Press 'p' to show detailed performance metrics
-- **Real-time TPS measurement**: Tracks ticks per second and frame times
-- **System-level profiling**: Individual timing for physics, gravity, life updates, etc.
-- **Seed velocity system**: Flowers now shoot seeds with physics-based trajectories instead of dropping them nearby
-- **Projectile mechanics**: Seeds have velocity, bounce physics, and wind interactions during flight
-- **Water wetting earth**: Water can now soak into dirt/sand instead of just accumulating
-- **Gravity for unsupported entities**: Pillbugs and plants fall as connected groups when unsupported
-- **Group-based falling**: Connected organisms maintain structural integrity during gravity events
-- **Extended lifespans**: All organisms now live 8x longer for better ecosystem observation
-- **Race condition fix**: Pillbugs no longer grow extra segments while falling (stability check added)
-- **Nutrient-rich dirt system**: New `NutrientDirt` tile type that stores absorbed nutrients
-- **Enhanced nutrient absorption**: Plants absorbing nutrients delay their aging and death timers
-- **Root-soil merging**: Plant roots can merge with dirt to create nutrient-rich soil
-- **Nutrient soil dynamics**: Free nutrients can absorb into dirt, creating nutrient reservoirs
-- **Advanced root feeding**: Roots can extract nutrients from nutrient-rich dirt over time
-- **Enhanced physics**: Better support detection for multi-segment organisms
-- **Improved realism**: More natural water behavior, object physics, and nutrient cycling
-- **Modularization started**: Began breaking world.rs into logical modules for better maintainability
+- **🚀 MASSIVE PERFORMANCE OPTIMIZATION**: Gravity checks now skip roots buried in soil - major CPU savings
+- **📊 Performance monitoring system**: Comprehensive lag detection and system profiling
+- **🎛️ Toggleable performance display**: Press 'p' to show detailed performance metrics with TPS/frame times
+- **⚡ System-level profiling**: Individual timing breakdown for physics, gravity, life updates, etc.
+- **📁 MODULAR ARCHITECTURE**: Successfully broke world.rs (2400+ lines) into logical modules:
+  - **life.rs** (93 lines) - Plant/pillbug lifecycle systems
+  - **physics.rs** (61 lines) - Sand falling, particle gravity 
+  - **environment.rs** (51 lines) - Weather, seasons, environmental conditions
+  - **world.rs** (2383 lines) - Core world logic (reduced by ~200 lines)
+- **🎯 Seed velocity system**: Flowers now shoot seeds with physics-based trajectories instead of dropping them nearby
+- **🌪️ Projectile mechanics**: Seeds have velocity, bounce physics, and wind interactions during flight
+- **💧 Water wetting earth**: Water can now soak into dirt/sand instead of just accumulating
+- **⬇️ Gravity for unsupported entities**: Pillbugs and plants fall as connected groups when unsupported
+- **🔗 Group-based falling**: Connected organisms maintain structural integrity during gravity events
+- **⏱️ Extended lifespans**: All organisms now live 8x longer for better ecosystem observation
+- **🐛 Race condition fix**: Pillbugs no longer grow extra segments while falling (stability check added)
+- **🌱 Nutrient-rich dirt system**: New `NutrientDirt` tile type that stores absorbed nutrients
+- **🔄 Enhanced nutrient absorption**: Plants absorbing nutrients delay their aging and death timers
+- **🌿 Root-soil merging**: Plant roots can merge with dirt to create nutrient-rich soil
+- **💰 Nutrient soil dynamics**: Free nutrients can absorb into dirt, creating nutrient reservoirs
+- **🍽️ Advanced root feeding**: Roots can extract nutrients from nutrient-rich dirt over time
+- **⚙️ Enhanced physics**: Better support detection for multi-segment organisms
+- **🌍 Improved realism**: More natural water behavior, object physics, and nutrient cycling
 
 ---
 

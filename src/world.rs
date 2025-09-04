@@ -15,7 +15,7 @@ struct TileChange {
 
 impl TileChange {
     fn new(x: usize, y: usize, old_tile: TileType, new_tile: TileType) -> Self {
-        Self { x, y, old_tile, new_tile }
+        TileChange { x, y, old_tile, new_tile }
     }
 }
 
@@ -283,7 +283,7 @@ impl World {
         self.wind_strength = self.wind_strength.clamp(0.0, 1.0);
     }
     
-    fn get_seasonal_growth_modifier(&self) -> f32 {
+    pub fn get_seasonal_growth_modifier(&self) -> f32 {
         // Base seasonal multipliers
         let season_multiplier = match self.get_current_season() {
             Season::Spring => 1.4,  // Peak growth season
@@ -635,65 +635,119 @@ impl World {
         }
     }
     
-    /// Apply gravity to unsupported entities (pillbugs and loose objects)
+    /// Apply gravity to unsupported entities (pillbugs and loose objects) - OPTIMIZED
     fn apply_gravity(&mut self) {
-        let mut new_tiles = self.tiles.clone();
         let mut rng = rand::thread_rng();
         let mut processed_positions = HashSet::new();
         
-        // Process gravity from bottom to top to avoid double-processing
+        // OPTIMIZATION: Collect potentially unstable entities first, skip others entirely  
+        let mut unstable_entities = Vec::new();
+        let underground_threshold = self.height.saturating_sub(self.height / 4); // Bottom 25% of world
+        
+        for y in 0..self.height.saturating_sub(1) {
+            for x in 0..self.width {
+                match self.tiles[y][x] {
+                    tile if tile.is_pillbug() => {
+                        // Quick stability check - if directly supported, skip expensive group analysis
+                        if y + 1 < self.height {
+                            let below = self.tiles[y + 1][x];
+                            if below.can_support_plants() || below.is_plant() || below.is_pillbug() {
+                                continue; // Obviously supported, skip
+                            }
+                        }
+                        unstable_entities.push((x, y, "pillbug"));
+                    }
+                    tile if tile.is_plant() => {
+                        // MAJOR OPTIMIZATION: Skip roots that are deep underground (bottom 25% of world)
+                        if matches!(tile, TileType::PlantRoot(_, _)) && y >= underground_threshold {
+                            continue; // Deep roots don't need gravity checks
+                        }
+                        
+                        // Also skip roots buried in soil at any depth
+                        if matches!(tile, TileType::PlantRoot(_, _)) && self.is_root_in_soil(x, y) {
+                            continue;
+                        }
+                        
+                        // Quick stability check for other plant parts
+                        if y + 1 < self.height {
+                            let below = self.tiles[y + 1][x];
+                            if below.can_support_plants() || below.is_plant() {
+                                continue; // Obviously supported, skip
+                            }
+                        }
+                        unstable_entities.push((x, y, "plant"));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        
+        // OPTIMIZATION: Use tile change queue instead of full clone
+        self.tile_changes.clear();
+        
+        // Process only potentially unstable entities
+        for (x, y, entity_type) in unstable_entities {
+            if processed_positions.contains(&(x, y)) {
+                continue; // Already processed as part of a group
+            }
+            
+            match entity_type {
+                "pillbug" => {
+                    let connected_segments = self.find_connected_pillbug_segments(x, y);
+                    if self.is_pillbug_group_unsupported(&connected_segments) {
+                        if self.can_move_group_down_simple(&connected_segments) {
+                            // Queue moves instead of modifying directly
+                            for (seg_x, seg_y, tile) in &connected_segments {
+                                self.queue_tile_change(*seg_x, *seg_y, TileType::Empty);
+                                self.queue_tile_change(*seg_x, seg_y + 1, *tile);
+                            }
+                            // Mark all segments as processed
+                            for (seg_x, seg_y, _) in &connected_segments {
+                                processed_positions.insert((*seg_x, *seg_y));
+                            }
+                        }
+                    }
+                }
+                "plant" => {
+                    let connected_plant_parts = self.find_connected_plant_parts(x, y);
+                    if self.is_plant_group_unsupported(&connected_plant_parts) {
+                        if self.can_move_group_down_simple(&connected_plant_parts) {
+                            // Queue moves instead of modifying directly
+                            for (part_x, part_y, tile) in &connected_plant_parts {
+                                self.queue_tile_change(*part_x, *part_y, TileType::Empty);
+                                self.queue_tile_change(*part_x, part_y + 1, *tile);
+                            }
+                            // Mark all parts as processed
+                            for (part_x, part_y, _) in &connected_plant_parts {
+                                processed_positions.insert((*part_x, *part_y));
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        
+        // OPTIMIZATION: Handle simple particle gravity using tile changes
         for y in (0..self.height - 1).rev() {
             for x in 0..self.width {
-                if processed_positions.contains(&(x, y)) {
-                    continue; // Already processed as part of a group
-                }
-                
                 match self.tiles[y][x] {
-                    // Pillbug parts - find and move entire connected pillbug as a group
-                    tile if tile.is_pillbug() => {
-                        let connected_segments = self.find_connected_pillbug_segments(x, y);
-                        if self.is_pillbug_group_unsupported(&connected_segments) {
-                            if self.can_move_group_down(&connected_segments, &new_tiles) {
-                                // Move entire pillbug group down
-                                self.move_group_down(&connected_segments, &mut new_tiles);
-                                // Mark all segments as processed
-                                for (seg_x, seg_y, _) in &connected_segments {
-                                    processed_positions.insert((*seg_x, *seg_y));
-                                }
-                            }
-                        }
-                    }
-                    // Plant parts - find and move connected plant structure as a group
-                    tile if tile.is_plant() => {
-                        let connected_plant_parts = self.find_connected_plant_parts(x, y);
-                        if self.is_plant_group_unsupported(&connected_plant_parts) {
-                            if self.can_move_group_down(&connected_plant_parts, &new_tiles) {
-                                // Move entire plant group down
-                                self.move_group_down(&connected_plant_parts, &mut new_tiles);
-                                // Mark all parts as processed
-                                for (part_x, part_y, _) in &connected_plant_parts {
-                                    processed_positions.insert((*part_x, *part_y));
-                                }
-                            }
-                        }
-                    }
-                    // Individual particles fall normally
                     TileType::Seed(age, size) => {
-                        if new_tiles[y + 1][x] == TileType::Empty && rng.gen_bool(0.6) {
-                            new_tiles[y][x] = TileType::Empty;
-                            new_tiles[y + 1][x] = TileType::Seed(age, size);
+                        if self.tiles[y + 1][x] == TileType::Empty && rng.gen_bool(0.6) {
+                            self.queue_tile_change(x, y, TileType::Empty);
+                            self.queue_tile_change(x, y + 1, TileType::Seed(age, size));
                         }
                     }
                     TileType::Spore(age) => {
-                        if new_tiles[y + 1][x] == TileType::Empty && rng.gen_bool(0.3) {
-                            new_tiles[y][x] = TileType::Empty;
-                            new_tiles[y + 1][x] = TileType::Spore(age);
+                        if self.tiles[y + 1][x] == TileType::Empty && rng.gen_bool(0.3) {
+                            self.queue_tile_change(x, y, TileType::Empty);
+                            self.queue_tile_change(x, y + 1, TileType::Spore(age));
                         }
                     }
                     TileType::Nutrient => {
-                        if new_tiles[y + 1][x] == TileType::Empty && rng.gen_bool(0.2) {
-                            new_tiles[y][x] = TileType::Empty;
-                            new_tiles[y + 1][x] = TileType::Nutrient;
+                        if self.tiles[y + 1][x] == TileType::Empty && rng.gen_bool(0.2) {
+                            self.queue_tile_change(x, y, TileType::Empty);
+                            self.queue_tile_change(x, y + 1, TileType::Nutrient);
                         }
                     }
                     _ => {}
@@ -701,7 +755,8 @@ impl World {
             }
         }
         
-        self.tiles = new_tiles;
+        // Apply all gravity changes at once
+        self.apply_tile_changes();
     }
     
     /// Check if a pillbug segment is completely unsupported (no solid ground, plants, or connected pillbug parts)
@@ -765,6 +820,40 @@ impl World {
         }
         
         false
+    }
+    
+    /// Check if a root is completely surrounded by soil (optimization for gravity)
+    fn is_root_in_soil(&self, x: usize, y: usize) -> bool {
+        // Check all 8 surrounding positions
+        for dy in -1i32..=1 {
+            for dx in -1i32..=1 {
+                if dx == 0 && dy == 0 { continue; } // Skip self
+                
+                let nx = (x as i32 + dx) as usize;
+                let ny = (y as i32 + dy) as usize;
+                
+                if nx < self.width && ny < self.height {
+                    match self.tiles[ny][nx] {
+                        // These tiles count as "soil" for root stability
+                        TileType::Dirt | TileType::NutrientDirt(_) | TileType::Sand => {
+                            // Good, surrounded by soil
+                        }
+                        TileType::PlantRoot(_, _) => {
+                            // Other roots also provide stability
+                        }
+                        _ => {
+                            // Empty space or other tiles - not completely buried
+                            return false;
+                        }
+                    }
+                } else {
+                    // Edge of world - counts as not buried
+                    return false;
+                }
+            }
+        }
+        
+        true // Root is completely surrounded by soil/other roots
     }
     
     /// Find all connected pillbug segments starting from a given position
@@ -908,6 +997,28 @@ impl World {
             if below_tile != TileType::Empty {
                 // Check if it's occupied by another member of the same group
                 let occupied_by_group = group.iter().any(|(gx, gy, _)| *gx == below_pos.0 && *gy == below_pos.1);
+                if !occupied_by_group {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+    
+    /// Simple version that checks current tiles (optimized for gravity)
+    fn can_move_group_down_simple(&self, group: &[(usize, usize, TileType)]) -> bool {
+        for (x, y, _) in group {
+            // Check if the position below is available
+            if *y + 1 >= self.height {
+                return false; // Can't fall past bottom
+            }
+            
+            let below_tile = self.tiles[*y + 1][*x];
+            
+            // Position must be empty or will be vacated by another group member falling
+            if below_tile != TileType::Empty {
+                // Check if it's occupied by another member of the same group
+                let occupied_by_group = group.iter().any(|(gx, gy, _)| *gx == *x && *gy == *y + 1);
                 if !occupied_by_group {
                     return false;
                 }

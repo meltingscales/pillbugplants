@@ -1,5 +1,8 @@
 mod types;
 mod world;
+mod life;
+mod physics;
+mod environment;
 mod app;
 
 use std::env;

@@ -19,7 +19,9 @@
       "Bash(sudo apt remove:*)",
       "Bash(sudo -S apt remove:*)",
       "Bash(source:*)",
-      "Bash(timeout 10s cargo run)"
+      "Bash(timeout 10s cargo run)",
+      "Bash(timeout 10s cargo run -- --sim-ticks=1000)",
+      "Bash(timeout 10s cargo run -- --sim-ticks=2000)"
     ],
     "deny": [],
     "ask": []
