@@ -1,45 +1,63 @@
 # Pillbugplants TODO
 
 ## Current Status
-- Basic world generation working
-- Simple plants with stems and leaves
-- Basic pillbugs (head only)
-- Day/night cycle
-- Rain system
-- Nutrient diffusion
-- Size variations
+- Full ecosystem simulation working
+- Multi-segment pillbugs with coordinated movement
+- Complete plant lifecycle with buds and flowers
+- Realistic physics for sand and water
+- Day/night cycle with rain
+- Nutrient cycling
+- Size variations affecting behavior
+- Pillbug reproduction and growth
+- Plant support system
 
-## In Progress
-- [ ] Add multi-segment pillbugs with body and legs
-
-## TODO
-- [ ] Implement pillbug movement and wandering behavior
-- [ ] Add plant buds and flowers for reproduction
-- [ ] Implement sand physics
-- [ ] Add pillbug reproduction
-- [ ] Improve plant growth patterns
-
-## Completed
+## Completed Features
 - [x] Explore existing codebase structure
 - [x] Check current build status
 - [x] Review existing simulation features
 - [x] Identify areas for improvement
+- [x] Add multi-segment pillbugs with body and legs
+- [x] Implement pillbug movement and wandering behavior
+- [x] Add plant buds and flowers for reproduction
+- [x] Implement sand physics with pile formation
+- [x] Add pillbug reproduction
+- [x] Improve plant growth patterns
+- [x] Add water flow physics
+- [x] Implement plant support checking
+
+## Potential Future Improvements
+- [ ] Add seasonal variations
+- [ ] Implement pillbug social behavior
+- [ ] Add more plant species
+- [ ] Create food chain dynamics
+- [ ] Add underground root systems
+- [ ] Implement weather patterns beyond rain
 
 ## Design Notes
 
 ### Pillbug Structure
-- Head: Main control segment, contains eating behavior
-- Body: Multiple segments (1-3), provides mass and health storage
-- Legs: Movement segment, enables wandering
+- Head: Main control segment, eating, reproduction
+- Body: Middle segment, grows at age 10
+- Legs: Movement segment, grows at age 20
+- Full lifecycle: birth → growth → reproduction → aging → decay
 
 ### Plant Structure
-- Stem: Main support, grows upward
-- Leaves: Photosynthesis, energy production
-- Buds: Growth points that can become branches or flowers
-- Flowers: Reproduction, seed spreading
+- Stem: Main support, grows upward, needs ground support
+- Leaves: Photosynthesis, side growth
+- Buds: Growth points at age 30+ that become flowers
+- Flowers: Reproduction, spread seeds based on size
+- Withered: Dying state before becoming nutrients
 
 ### Physics
-- Gravity for sand and water
+- Gravity affects sand and water
 - Water flows sideways when blocked
-- Sand forms piles
-- Support checking for plant parts
+- Sand forms natural piles
+- Plant parts check for structural support
+- Unsupported plants fall or wither
+
+### Ecosystem Dynamics
+- Closed nutrient loop
+- Size variations affect lifespan and behavior
+- Day/night affects rain probability
+- Well-fed pillbugs reproduce
+- Plants seed new areas
