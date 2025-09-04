@@ -25,13 +25,23 @@
 - [x] Add water flow physics
 - [x] Implement plant support checking
 
+## Immediate Priorities
+- [ ] Implement MovementStrategy enum for better pillbug AI
+- [ ] Add plant branching patterns (Y-shaped growth)
+- [ ] Improve size-based feeding efficiency
+- [ ] Add plant-pillbug shelter interactions
+- [ ] Enhance bud development (branch vs flower choice)
+
 ## Potential Future Improvements
 - [ ] Add seasonal variations
-- [ ] Implement pillbug social behavior
-- [ ] Add more plant species
+- [ ] Implement pillbug social behavior (clustering, trails)
+- [ ] Add more plant species (grasses, trees, shrubs)
 - [ ] Create food chain dynamics
 - [ ] Add underground root systems
 - [ ] Implement weather patterns beyond rain
+- [ ] Genetic traits and inheritance
+- [ ] Disease and infection mechanics
+- [ ] Ecosystem succession over time
 
 ## Design Notes
 
