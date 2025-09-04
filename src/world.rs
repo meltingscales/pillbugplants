@@ -331,6 +331,7 @@ impl World {
                     TileType::PillbugHead(age, size) => {
                         pillbug_heads.push((x, y, size, age));
                         let mut new_age = age.saturating_add(1);
+                        let mut well_fed = false;
                         
                         // Eating behavior - pillbugs eat plants and nutrients
                         for dy in -1..=1 {
@@ -343,16 +344,35 @@ impl World {
                                             if rng.gen_bool(0.2) {
                                                 new_tiles[ny][nx] = TileType::Empty;
                                                 new_age = new_age.saturating_sub(5);
+                                                well_fed = true;
                                             }
                                         }
                                         TileType::Nutrient => {
                                             if rng.gen_bool(0.3) {
                                                 new_tiles[ny][nx] = TileType::Empty;
                                                 new_age = new_age.saturating_sub(3);
+                                                well_fed = true;
                                             }
                                         }
                                         _ => {}
                                     }
+                                }
+                            }
+                        }
+                        
+                        // Reproduction - well-fed mature pillbugs reproduce
+                        if well_fed && age > 30 && age < 100 && rng.gen_bool(0.05 * size.growth_rate_multiplier() as f64) {
+                            // Try to spawn baby pillbug nearby
+                            for _ in 0..5 {  // Try 5 times to find a spot
+                                let spawn_x = (x as i32 + rng.gen_range(-3..=3)).clamp(2, self.width as i32 - 3) as usize;
+                                let spawn_y = (y as i32 + rng.gen_range(-2..=2)).clamp(0, self.height as i32 - 1) as usize;
+                                
+                                if new_tiles[spawn_y][spawn_x] == TileType::Empty {
+                                    // Baby inherits size with chance of variation
+                                    let baby_size = if rng.gen_bool(0.8) { size } else { random_size(&mut rng) };
+                                    // Spawn baby pillbug (just head for now, body will grow)
+                                    new_tiles[spawn_y][spawn_x] = TileType::PillbugHead(0, baby_size);
+                                    break;
                                 }
                             }
                         }
@@ -392,8 +412,47 @@ impl World {
             }
         }
         
-        // Move pillbugs (heads control movement)
+        // Move pillbugs (heads control movement) and grow baby segments
         for (x, y, size, age) in pillbug_heads {
+            // Baby pillbugs grow body segments as they mature
+            if age == 10 {
+                // Grow body segment
+                for (dx, dy) in &[(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    let nx = (x as i32 + dx) as usize;
+                    let ny = (y as i32 + dy) as usize;
+                    if nx < self.width && ny < self.height && new_tiles[ny][nx] == TileType::Empty {
+                        new_tiles[ny][nx] = TileType::PillbugBody(age, size);
+                        break;
+                    }
+                }
+            } else if age == 20 {
+                // Grow legs segment
+                // Find the body segment first
+                for (dx, dy) in &[(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    let bx = (x as i32 + dx) as usize;
+                    let by = (y as i32 + dy) as usize;
+                    if bx < self.width && by < self.height {
+                        if let TileType::PillbugBody(_, b_size) = new_tiles[by][bx] {
+                            if b_size == size {
+                                // Try to add legs next to body
+                                for (dx2, dy2) in &[(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                                    let lx = (bx as i32 + dx2) as usize;
+                                    let ly = (by as i32 + dy2) as usize;
+                                    if lx < self.width && ly < self.height && new_tiles[ly][lx] == TileType::Empty {
+                                        // Make sure it's not next to the head
+                                        if lx != x || ly != y {
+                                            new_tiles[ly][lx] = TileType::PillbugLegs(age, size);
+                                            break;
+                                        }
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            
             if rng.gen_bool(0.3) {  // 30% chance to move each tick
                 let movement_speed = match size {
                     Size::Small => 0.5,   // Small bugs move more often
