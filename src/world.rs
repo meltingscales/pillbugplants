@@ -1,9 +1,10 @@
 use std::fmt;
 use rand::{Rng, seq::SliceRandom};
-use crate::types::{TileType, Size, random_size, MovementStrategy, Season};
+use crate::types::{TileType, Size, random_size, MovementStrategy, Season, Biome, random_biome};
 
 pub struct World {
     pub tiles: Vec<Vec<TileType>>,
+    pub biome_map: Vec<Vec<Biome>>, // Biome information for each region
     pub width: usize,
     pub height: usize,
     pub tick: u64,
@@ -17,8 +18,10 @@ pub struct World {
 impl World {
     pub fn new(width: usize, height: usize) -> Self {
         let tiles = vec![vec![TileType::Empty; width]; height];
+        let biome_map = vec![vec![Biome::Grassland; width]; height]; // Initialize with default biome
         let mut world = World {
             tiles,
+            biome_map,
             width,
             height,
             tick: 0,
@@ -29,6 +32,7 @@ impl World {
             humidity: 0.5,       // Moderate humidity
         };
         
+        world.generate_biome_map();
         world.generate_initial_world();
         world
     }
@@ -54,7 +58,7 @@ impl World {
         };
         
         // Rain more likely during night and based on seasonal patterns
-        if self.day_cycle.sin() < -0.3 && rng.gen_bool((base_rain_chance * seasonal_rain_modifier) as f64) {
+        if self.day_cycle.sin() < -0.3 && rng.gen_bool((base_rain_chance * seasonal_rain_modifier).min(1.0) as f64) {
             self.rain_intensity = rng.gen_range(0.1..(0.8 * self.humidity));
         } else if rng.gen_bool(0.02) {
             self.rain_intensity *= 0.95; // Rain gradually stops
@@ -140,31 +144,77 @@ impl World {
         season_multiplier * temp_multiplier * humidity_multiplier
     }
     
+    /// Generate biome map using regions and noise-like patterns
+    fn generate_biome_map(&mut self) {
+        let mut rng = rand::thread_rng();
+        
+        // Divide world into regions and assign biomes
+        let region_size = 8; // Each biome region is roughly 8x8 tiles
+        
+        for ry in 0..(self.height / region_size + 1) {
+            for rx in 0..(self.width / region_size + 1) {
+                let biome = random_biome(&mut rng);
+                
+                // Fill region with this biome, with some variation at edges
+                for y in (ry * region_size)..((ry + 1) * region_size).min(self.height) {
+                    for x in (rx * region_size)..((rx + 1) * region_size).min(self.width) {
+                        // Add some fuzzy edges between biomes
+                        let distance_from_center = ((x % region_size) as f32 - region_size as f32 / 2.0).abs()
+                            + ((y % region_size) as f32 - region_size as f32 / 2.0).abs();
+                        
+                        if distance_from_center < region_size as f32 * 0.3 || rng.gen_bool(0.7) {
+                            self.biome_map[y][x] = biome;
+                        } else if rng.gen_bool(0.5) {
+                            // Sometimes blend with neighboring biomes
+                            self.biome_map[y][x] = random_biome(&mut rng);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Get biome at a specific coordinate
+    pub fn get_biome_at(&self, x: usize, y: usize) -> Biome {
+        if x < self.width && y < self.height {
+            self.biome_map[y][x]
+        } else {
+            Biome::Grassland // Default fallback
+        }
+    }
+
     // Simplified stub implementations - these would be expanded from the original
     fn generate_initial_world(&mut self) {
         let mut rng = rand::thread_rng();
         
-        // Create varied terrain with dirt and sand
+        // Create varied terrain with dirt and sand based on biome preferences
         for y in (self.height - 10)..self.height {
             for x in 0..self.width {
+                let biome = self.get_biome_at(x, y);
+                let (dirt_pref, sand_pref) = biome.get_terrain_preferences();
                 let depth = self.height - y;
+                
                 if depth <= 2 {
-                    // Top layers have mix of dirt and sand
-                    if rng.gen_bool(0.3) {
+                    // Top layers influenced by biome
+                    if rng.gen_bool(sand_pref as f64) {
                         self.tiles[y][x] = TileType::Sand;
-                    } else if rng.gen_bool(0.7) {
+                    } else if rng.gen_bool(dirt_pref as f64) {
                         self.tiles[y][x] = TileType::Dirt;
                     }
                 } else if depth <= 5 {
-                    // Middle layers mostly dirt
-                    if rng.gen_bool(0.85) {
+                    // Middle layers mostly follow biome preferences but favor dirt
+                    let dirt_chance = (dirt_pref * 0.85 + 0.15).min(0.95);
+                    let sand_chance = sand_pref * 0.5;
+                    
+                    if rng.gen_bool(dirt_chance as f64) {
                         self.tiles[y][x] = TileType::Dirt;
-                    } else if rng.gen_bool(0.5) {
+                    } else if rng.gen_bool(sand_chance as f64) {
                         self.tiles[y][x] = TileType::Sand;
                     }
                 } else {
-                    // Deep layers all dirt
-                    if rng.gen_bool(0.95) {
+                    // Deep layers mostly dirt but still biome-influenced
+                    let dirt_chance = (dirt_pref * 0.1 + 0.85).min(0.98);
+                    if rng.gen_bool(dirt_chance as f64) {
                         self.tiles[y][x] = TileType::Dirt;
                     }
                 }
@@ -186,22 +236,41 @@ impl World {
             }
         }
         
-        // Add a few initial plants
-        for _ in 0..3 {
+        // Add initial plants based on biome preferences
+        let base_plant_count = 8; // More plants than before to show biome differences
+        for _ in 0..base_plant_count {
             let x = rng.gen_range(0..self.width);
             let y = rng.gen_range(self.height - 12..self.height - 3);
             if self.tiles[y][x] == TileType::Empty {
-                let size = random_size(&mut rng);
-                self.tiles[y][x] = TileType::PlantStem(10, size);
+                let biome = self.get_biome_at(x, y);
+                let plant_chance = biome.plant_growth_modifier() * 0.6; // Base 60% chance
+                
+                if rng.gen_bool(plant_chance as f64) {
+                    let size = random_size(&mut rng);
+                    self.tiles[y][x] = TileType::PlantStem(10, size);
+                    
+                    // In Woodland biomes, sometimes add immediate roots
+                    if biome == Biome::Woodland && rng.gen_bool(0.4) {
+                        if y + 1 < self.height && self.tiles[y + 1][x] != TileType::Empty {
+                            self.tiles[y + 1][x] = TileType::PlantRoot(5, size);
+                        }
+                    }
+                }
             }
         }
         
-        // Add nutrients scattered around
-        for _ in 0..5 {
+        // Add nutrients based on biome richness
+        let base_nutrient_count = 10;
+        for _ in 0..base_nutrient_count {
             let x = rng.gen_range(0..self.width);
             let y = rng.gen_range(self.height - 15..self.height - 2);
             if self.tiles[y][x] == TileType::Empty {
-                self.tiles[y][x] = TileType::Nutrient;
+                let biome = self.get_biome_at(x, y);
+                let nutrient_chance = biome.nutrient_modifier() * 0.5; // Base 50% chance
+                
+                if rng.gen_bool(nutrient_chance as f64) {
+                    self.tiles[y][x] = TileType::Nutrient;
+                }
             }
         }
         
@@ -223,7 +292,14 @@ impl World {
             for _ in 0..drops {
                 let x = rng.gen_range(0..self.width);
                 if self.tiles[0][x] == TileType::Empty {
-                    self.tiles[0][x] = TileType::Water;
+                    // Check biome for rain accumulation bonus
+                    let biome = self.get_biome_at(x, 0);
+                    let accumulation_bonus = biome.rain_accumulation_bonus();
+                    
+                    // Higher chance for rain to "stick" in wetlands, lower in drylands
+                    if rng.gen_bool((accumulation_bonus * 0.8).min(1.0) as f64) {
+                        self.tiles[0][x] = TileType::Water;
+                    }
                 }
             }
         }
@@ -265,29 +341,45 @@ impl World {
                         }
                     }
                     TileType::Water => {
-                        // Water flows down and spreads sideways
-                        if new_tiles[y + 1][x] == TileType::Empty {
-                            new_tiles[y][x] = TileType::Empty;
-                            new_tiles[y + 1][x] = TileType::Water;
-                        } else if !matches!(new_tiles[y + 1][x], TileType::Empty) {
-                            // Water spreads sideways when blocked
-                            // Try diagonal flow first
-                            let directions = if rng.gen_bool(0.5) {
-                                vec![(-1, 1), (1, 1), (-1, 0), (1, 0)]
-                            } else {
-                                vec![(1, 1), (-1, 1), (1, 0), (-1, 0)]
-                            };
-                            
-                            for (dx, dy) in directions {
-                                let nx = (x as i32 + dx) as usize;
-                                let ny = (y as i32 + dy) as usize;
-                                if nx < self.width && ny < self.height {
-                                    if new_tiles[ny][nx] == TileType::Empty {
-                                        // Higher chance to flow sideways for water
-                                        if dy == 0 && rng.gen_bool(0.7) || dy == 1 {
-                                            new_tiles[y][x] = TileType::Empty;
-                                            new_tiles[ny][nx] = TileType::Water;
-                                            break;
+                        // Check for biome-based evaporation
+                        let biome = self.get_biome_at(x, y);
+                        let moisture_retention = biome.moisture_retention();
+                        let evaporation_chance = (1.0 - moisture_retention) * 0.01; // Small base evaporation rate
+                        
+                        // Increase evaporation in dry biomes, especially during day and hot seasons
+                        let day_modifier = if self.is_day() { 1.5 } else { 0.8 };
+                        let temp_modifier = (self.temperature + 1.0) * 0.5; // 0.0 to 1.0 range
+                        let final_evaporation = evaporation_chance * day_modifier * (1.0 + temp_modifier);
+                        
+                        if rng.gen_bool(final_evaporation.min(1.0) as f64) {
+                            new_tiles[y][x] = TileType::Empty; // Evaporate
+                        } else {
+                            // Normal water flow physics
+                            if new_tiles[y + 1][x] == TileType::Empty {
+                                new_tiles[y][x] = TileType::Empty;
+                                new_tiles[y + 1][x] = TileType::Water;
+                            } else if !matches!(new_tiles[y + 1][x], TileType::Empty) {
+                                // Water spreads sideways when blocked
+                                // In wetlands, water tends to pool more
+                                let flow_resistance = if biome == Biome::Wetland { 0.5 } else { 0.7 };
+                                
+                                let directions = if rng.gen_bool(0.5) {
+                                    vec![(-1, 1), (1, 1), (-1, 0), (1, 0)]
+                                } else {
+                                    vec![(1, 1), (-1, 1), (1, 0), (-1, 0)]
+                                };
+                                
+                                for (dx, dy) in directions {
+                                    let nx = (x as i32 + dx) as usize;
+                                    let ny = (y as i32 + dy) as usize;
+                                    if nx < self.width && ny < self.height {
+                                        if new_tiles[ny][nx] == TileType::Empty {
+                                            // Flow chance modified by biome
+                                            if dy == 0 && rng.gen_bool(flow_resistance) || dy == 1 {
+                                                new_tiles[y][x] = TileType::Empty;
+                                                new_tiles[ny][nx] = TileType::Water;
+                                                break;
+                                            }
                                         }
                                     }
                                 }
@@ -433,9 +525,12 @@ impl World {
                         } else {
                             new_tiles[y][x] = TileType::PlantStem(new_age, size);
                             
-                            // Plant growth - affected by seasonal conditions
-                            let seasonal_growth_rate = self.get_seasonal_growth_modifier() * growth_rate;
-                            if rng.gen_bool(0.1 * seasonal_growth_rate as f64) {
+                            // Plant growth - affected by seasonal conditions and biome
+                            let biome = self.get_biome_at(x, y);
+                            let seasonal_growth_rate = self.get_seasonal_growth_modifier() 
+                                * growth_rate 
+                                * biome.plant_growth_modifier();
+                            if rng.gen_bool((0.1 * seasonal_growth_rate).min(1.0) as f64) {
                                 // Try to grow upward (extend stem)
                                 if y > 0 && self.tiles[y - 1][x] == TileType::Empty && rng.gen_bool(0.3) {
                                     new_tiles[y - 1][x] = TileType::PlantStem(0, size);
@@ -469,8 +564,11 @@ impl World {
                         let new_age = age.saturating_add(1);
                         let growth_rate = size.growth_rate_multiplier();
                         
-                        let seasonal_growth_rate = self.get_seasonal_growth_modifier() * growth_rate;
-                        if new_age > 25 && rng.gen_bool(0.15 * seasonal_growth_rate as f64) {
+                        let biome = self.get_biome_at(x, y);
+                        let seasonal_growth_rate = self.get_seasonal_growth_modifier() 
+                            * growth_rate 
+                            * biome.plant_growth_modifier();
+                        if new_age > 25 && rng.gen_bool((0.15 * seasonal_growth_rate).min(1.0) as f64) {
                             // Bud can mature into branch or flower
                             if rng.gen_bool(0.6) {
                                 // 60% chance to become a branch for Y-shaped growth
@@ -495,8 +593,11 @@ impl World {
                             new_tiles[y][x] = TileType::PlantBranch(new_age, size);
                             
                             // Branches grow diagonally and can spawn leaves/buds
-                            let seasonal_growth_rate = self.get_seasonal_growth_modifier() * growth_rate;
-                            if rng.gen_bool(0.08 * seasonal_growth_rate as f64) {
+                            let biome = self.get_biome_at(x, y);
+                            let seasonal_growth_rate = self.get_seasonal_growth_modifier() 
+                                * growth_rate 
+                                * biome.plant_growth_modifier();
+                            if rng.gen_bool((0.08 * seasonal_growth_rate).min(1.0) as f64) {
                                 // Diagonal growth patterns for Y-shaped branching
                                 let directions = [(-1, -1), (1, -1), (-1, 1), (1, 1)];
                                 if let Some(&(dx, dy)) = directions.choose(&mut rng) {
@@ -526,8 +627,11 @@ impl World {
                             new_tiles[y][x] = TileType::PlantFlower(new_age, size);
                             
                             // Flowers spread seeds - more active in good weather
-                            let seasonal_growth_rate = self.get_seasonal_growth_modifier() * size.growth_rate_multiplier();
-                            if rng.gen_bool(0.05 * seasonal_growth_rate as f64) {
+                            let biome = self.get_biome_at(x, y);
+                            let seasonal_growth_rate = self.get_seasonal_growth_modifier() 
+                                * size.growth_rate_multiplier() 
+                                * biome.plant_growth_modifier();
+                            if rng.gen_bool((0.05 * seasonal_growth_rate).min(1.0) as f64) {
                                 let spread_distance = match size {
                                     Size::Small => 3,
                                     Size::Medium => 5,
@@ -608,7 +712,7 @@ impl World {
                                     let nx = (x as i32 + dx) as usize;
                                     let ny = (y as i32 + dy) as usize;
                                     if nx < self.width && ny < self.height {
-                                        if self.tiles[ny][nx] == TileType::Nutrient && rng.gen_bool(0.3 * growth_rate as f64) {
+                                        if self.tiles[ny][nx] == TileType::Nutrient && rng.gen_bool((0.3 * growth_rate).min(1.0) as f64) {
                                             // Absorb nutrients and potentially extend root network
                                             new_tiles[ny][nx] = TileType::Empty;
                                             
@@ -685,7 +789,7 @@ impl World {
                         }
                         
                         // Reproduction - well-fed mature pillbugs reproduce
-                        if well_fed && age > 30 && age < 100 && rng.gen_bool(0.05 * size.growth_rate_multiplier() as f64) {
+                        if well_fed && age > 30 && age < 100 && rng.gen_bool((0.05 * size.growth_rate_multiplier()).min(1.0) as f64) {
                             // Try to spawn baby pillbug nearby
                             for _ in 0..5 {  // Try 5 times to find a spot
                                 let spawn_x = (x as i32 + rng.gen_range(-3..=3)).clamp(2, self.width as i32 - 3) as usize;

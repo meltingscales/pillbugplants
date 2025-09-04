@@ -9,6 +9,14 @@ pub enum Season {
     Winter = 3, // Cold season - low temperature, variable humidity
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum Biome {
+    Wetland,    // High moisture retention, frequent pools, lush plant growth
+    Grassland,  // Balanced moisture, moderate plant density
+    Drylands,   // Low moisture retention, sparse vegetation, sandy soil
+    Woodland,   // Dense plant growth, high nutrient content, mixed terrain
+}
+
 #[derive(Debug, Clone)]
 pub enum MovementStrategy {
     SeekFood((i32, i32)),    // Direction to food
@@ -296,11 +304,72 @@ impl TileType {
     }
 }
 
+impl Biome {
+    /// Moisture retention factor - affects water pooling and evaporation
+    pub fn moisture_retention(self) -> f32 {
+        match self {
+            Biome::Wetland => 1.4,   // Retains water well
+            Biome::Grassland => 1.0, // Normal retention
+            Biome::Drylands => 0.6,  // Loses water quickly
+            Biome::Woodland => 1.2,  // Good retention under tree cover
+        }
+    }
+    
+    /// Plant growth modifier - affects how well plants grow in this biome
+    pub fn plant_growth_modifier(self) -> f32 {
+        match self {
+            Biome::Wetland => 1.3,   // Lush growth
+            Biome::Grassland => 1.0, // Normal growth
+            Biome::Drylands => 0.7,  // Sparse growth
+            Biome::Woodland => 1.5,  // Dense growth
+        }
+    }
+    
+    /// Nutrient concentration - affects nutrient spawning and availability
+    pub fn nutrient_modifier(self) -> f32 {
+        match self {
+            Biome::Wetland => 1.1,   // Rich nutrients from decomposition
+            Biome::Grassland => 1.0, // Balanced nutrients
+            Biome::Drylands => 0.8,  // Fewer nutrients
+            Biome::Woodland => 1.4,  // Very rich soil
+        }
+    }
+    
+    /// Terrain composition - affects what terrain types are common
+    pub fn get_terrain_preferences(self) -> (f32, f32) { // (dirt_ratio, sand_ratio)
+        match self {
+            Biome::Wetland => (0.8, 0.2),   // More dirt for water retention
+            Biome::Grassland => (0.7, 0.3), // Balanced
+            Biome::Drylands => (0.4, 0.6),  // More sand
+            Biome::Woodland => (0.9, 0.1),  // Rich soil, little sand
+        }
+    }
+    
+    /// Rain accumulation bonus - how much more/less rain stays in this biome
+    pub fn rain_accumulation_bonus(self) -> f32 {
+        match self {
+            Biome::Wetland => 1.5,   // Forms pools easily
+            Biome::Grassland => 1.0, // Normal accumulation
+            Biome::Drylands => 0.7,  // Rain flows away quickly
+            Biome::Woodland => 1.2,  // Tree cover helps retention
+        }
+    }
+}
+
 pub fn random_size(rng: &mut impl Rng) -> Size {
     match rng.gen_range(0..10) {
         0..=2 => Size::Small,   // 30% small
         3..=6 => Size::Medium,  // 40% medium  
         7..=9 => Size::Large,   // 30% large
         _ => Size::Medium,
+    }
+}
+
+pub fn random_biome(rng: &mut impl Rng) -> Biome {
+    match rng.gen_range(0..4) {
+        0 => Biome::Wetland,
+        1 => Biome::Grassland,
+        2 => Biome::Drylands,
+        _ => Biome::Woodland,
     }
 }
