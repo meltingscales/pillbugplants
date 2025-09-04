@@ -9,7 +9,16 @@
       "Bash(cargo:*)",
       "Bash(grep:*)",
       "Bash(timeout 3 cargo run)",
-      "Bash(rustup toolchain:*)"
+      "Bash(rustup toolchain:*)",
+      "Bash(rustup:*)",
+      "Bash(rm:*)",
+      "Bash(rustc:*)",
+      "Bash(echo $PATH)",
+      "Read(//home/melty/.cargo/bin/**)",
+      "Bash(dpkg:*)",
+      "Bash(sudo apt remove:*)",
+      "Bash(sudo -S apt remove:*)",
+      "Bash(source:*)"
     ],
     "deny": [],
     "ask": []
