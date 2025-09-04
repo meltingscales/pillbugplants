@@ -41,6 +41,7 @@ impl World {
         
         self.spawn_rain();
         self.update_physics();
+        self.check_plant_support();
         self.diffuse_nutrients();
         self.update_life();
         self.spawn_entities();
@@ -202,6 +203,94 @@ impl World {
                                     }
                                 }
                             }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        
+        self.tiles = new_tiles;
+    }
+    
+    fn check_plant_support(&mut self) {
+        let mut new_tiles = self.tiles.clone();
+        let mut rng = rand::thread_rng();
+        
+        // Check plant parts from top to bottom
+        for y in 0..self.height - 1 {
+            for x in 0..self.width {
+                match self.tiles[y][x] {
+                    TileType::PlantLeaf(_, size) | TileType::PlantBud(_, size) | 
+                    TileType::PlantFlower(_, size) => {
+                        // Check for support in 8 directions
+                        let mut has_support = false;
+                        for dy in -1..=1 {
+                            for dx in -1..=1 {
+                                if dx == 0 && dy == 0 { continue; }
+                                let nx = (x as i32 + dx) as usize;
+                                let ny = (y as i32 + dy) as usize;
+                                if nx < self.width && ny < self.height {
+                                    match self.tiles[ny][nx] {
+                                        TileType::PlantStem(_, _) | TileType::Dirt => {
+                                            has_support = true;
+                                            break;
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                            if has_support { break; }
+                        }
+                        
+                        // If no support, it falls or withers
+                        if !has_support {
+                            if rng.gen_bool(0.3) {
+                                // Falls down if space below
+                                if y + 1 < self.height && new_tiles[y + 1][x] == TileType::Empty {
+                                    new_tiles[y + 1][x] = self.tiles[y][x];
+                                    new_tiles[y][x] = TileType::Empty;
+                                } else {
+                                    // Withers if can't fall
+                                    new_tiles[y][x] = TileType::PlantWithered(0, size);
+                                }
+                            }
+                        }
+                    }
+                    TileType::PlantStem(age, size) => {
+                        // Stems need support from below or adjacent stems
+                        let mut has_support = false;
+                        
+                        // Check below
+                        if y + 1 < self.height {
+                            match self.tiles[y + 1][x] {
+                                TileType::PlantStem(_, _) | TileType::Dirt | TileType::Sand => {
+                                    has_support = true;
+                                }
+                                _ => {}
+                            }
+                        } else {
+                            has_support = true; // Bottom row
+                        }
+                        
+                        // Check adjacent for other stems
+                        if !has_support {
+                            for dx in -1..=1 {
+                                let nx = (x as i32 + dx) as usize;
+                                if nx < self.width {
+                                    if let TileType::PlantStem(other_age, _) = self.tiles[y][nx] {
+                                        if other_age > age {  // Older stems provide support
+                                            has_support = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Unsupported stems fall or break
+                        if !has_support && rng.gen_bool(0.2) {
+                            new_tiles[y][x] = TileType::PlantWithered(0, size);
                         }
                     }
                     _ => {}
