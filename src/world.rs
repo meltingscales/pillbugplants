@@ -100,6 +100,7 @@ impl World {
         
         self.spawn_rain();
         self.update_physics();
+        self.apply_gravity();
         self.process_wind_effects();
         self.check_plant_support();
         self.diffuse_nutrients();
@@ -436,10 +437,337 @@ impl World {
         self.tiles = new_tiles;
     }
     
+    /// Apply gravity to unsupported entities (pillbugs and loose objects)
+    fn apply_gravity(&mut self) {
+        let mut new_tiles = self.tiles.clone();
+        let mut rng = rand::thread_rng();
+        let mut processed_positions = HashSet::new();
+        
+        // Process gravity from bottom to top to avoid double-processing
+        for y in (0..self.height - 1).rev() {
+            for x in 0..self.width {
+                if processed_positions.contains(&(x, y)) {
+                    continue; // Already processed as part of a group
+                }
+                
+                match self.tiles[y][x] {
+                    // Pillbug parts - find and move entire connected pillbug as a group
+                    tile if tile.is_pillbug() => {
+                        let connected_segments = self.find_connected_pillbug_segments(x, y);
+                        if self.is_pillbug_group_unsupported(&connected_segments) {
+                            if self.can_move_group_down(&connected_segments, &new_tiles) {
+                                // Move entire pillbug group down
+                                self.move_group_down(&connected_segments, &mut new_tiles);
+                                // Mark all segments as processed
+                                for (seg_x, seg_y, _) in &connected_segments {
+                                    processed_positions.insert((*seg_x, *seg_y));
+                                }
+                            }
+                        }
+                    }
+                    // Plant parts - find and move connected plant structure as a group
+                    tile if tile.is_plant() => {
+                        let connected_plant_parts = self.find_connected_plant_parts(x, y);
+                        if self.is_plant_group_unsupported(&connected_plant_parts) {
+                            if self.can_move_group_down(&connected_plant_parts, &new_tiles) {
+                                // Move entire plant group down
+                                self.move_group_down(&connected_plant_parts, &mut new_tiles);
+                                // Mark all parts as processed
+                                for (part_x, part_y, _) in &connected_plant_parts {
+                                    processed_positions.insert((*part_x, *part_y));
+                                }
+                            }
+                        }
+                    }
+                    // Individual particles fall normally
+                    TileType::Seed(age, size) => {
+                        if new_tiles[y + 1][x] == TileType::Empty && rng.gen_bool(0.6) {
+                            new_tiles[y][x] = TileType::Empty;
+                            new_tiles[y + 1][x] = TileType::Seed(age, size);
+                        }
+                    }
+                    TileType::Spore(age) => {
+                        if new_tiles[y + 1][x] == TileType::Empty && rng.gen_bool(0.3) {
+                            new_tiles[y][x] = TileType::Empty;
+                            new_tiles[y + 1][x] = TileType::Spore(age);
+                        }
+                    }
+                    TileType::Nutrient => {
+                        if new_tiles[y + 1][x] == TileType::Empty && rng.gen_bool(0.2) {
+                            new_tiles[y][x] = TileType::Empty;
+                            new_tiles[y + 1][x] = TileType::Nutrient;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        
+        self.tiles = new_tiles;
+    }
+    
+    /// Check if a pillbug segment is completely unsupported (no solid ground, plants, or connected pillbug parts)
+    fn is_pillbug_segment_unsupported(&self, x: usize, y: usize) -> bool {
+        // Already at bottom - supported by world boundary
+        if y >= self.height - 1 {
+            return false;
+        }
+        
+        // Check all 8 directions for support
+        for dy in -1i32..=1 {
+            for dx in -1i32..=1 {
+                if dx == 0 && dy == 0 { continue; } // Skip self
+                
+                let nx = (x as i32 + dx) as usize;
+                let ny = (y as i32 + dy) as usize;
+                
+                if nx < self.width && ny < self.height {
+                    match self.tiles[ny][nx] {
+                        // Solid support
+                        TileType::Dirt | TileType::Sand => return false,
+                        // Plant support
+                        TileType::PlantStem(_, _) | TileType::PlantRoot(_, _) | TileType::PlantBranch(_, _) => return false,
+                        // Other pillbug support (connected segments)
+                        tile if tile.is_pillbug() => {
+                            // Only count as support if the other segment is also supported or connected to something solid
+                            if dy == 1 || self.has_solid_support_nearby(nx, ny) {
+                                return false;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        
+        true // No support found
+    }
+    
+    /// Check if a position has solid support nearby (for connected pillbug segments)
+    fn has_solid_support_nearby(&self, x: usize, y: usize) -> bool {
+        // Bottom boundary is always solid
+        if y >= self.height - 1 {
+            return true;
+        }
+        
+        // Check adjacent positions for solid support
+        for dy in -1i32..=1 {
+            for dx in -1i32..=1 {
+                let nx = (x as i32 + dx) as usize;
+                let ny = (y as i32 + dy) as usize;
+                
+                if nx < self.width && ny < self.height {
+                    match self.tiles[ny][nx] {
+                        TileType::Dirt | TileType::Sand | TileType::PlantStem(_, _) | 
+                        TileType::PlantRoot(_, _) | TileType::PlantBranch(_, _) => return true,
+                        _ => {}
+                    }
+                }
+            }
+        }
+        
+        false
+    }
+    
+    /// Find all connected pillbug segments starting from a given position
+    fn find_connected_pillbug_segments(&self, start_x: usize, start_y: usize) -> Vec<(usize, usize, TileType)> {
+        let mut connected = Vec::new();
+        let mut visited = HashSet::new();
+        let mut to_check = vec![(start_x, start_y)];
+        
+        while let Some((x, y)) = to_check.pop() {
+            if visited.contains(&(x, y)) {
+                continue;
+            }
+            visited.insert((x, y));
+            
+            let tile = self.tiles[y][x];
+            if tile.is_pillbug() {
+                connected.push((x, y, tile));
+                
+                // Check adjacent positions for more pillbug parts
+                for dy in -1i32..=1 {
+                    for dx in -1i32..=1 {
+                        if dx == 0 && dy == 0 { continue; }
+                        
+                        let nx = (x as i32 + dx) as usize;
+                        let ny = (y as i32 + dy) as usize;
+                        
+                        if nx < self.width && ny < self.height && !visited.contains(&(nx, ny)) {
+                            let neighbor_tile = self.tiles[ny][nx];
+                            if neighbor_tile.is_pillbug() {
+                                // Check if sizes match (same pillbug)
+                                if let (Some(size1), Some(size2)) = (tile.get_size(), neighbor_tile.get_size()) {
+                                    if size1 == size2 {
+                                        to_check.push((nx, ny));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        connected
+    }
+    
+    /// Find all connected plant parts starting from a given position
+    fn find_connected_plant_parts(&self, start_x: usize, start_y: usize) -> Vec<(usize, usize, TileType)> {
+        let mut connected = Vec::new();
+        let mut visited = HashSet::new();
+        let mut to_check = vec![(start_x, start_y)];
+        
+        while let Some((x, y)) = to_check.pop() {
+            if visited.contains(&(x, y)) {
+                continue;
+            }
+            visited.insert((x, y));
+            
+            let tile = self.tiles[y][x];
+            if tile.is_plant() {
+                connected.push((x, y, tile));
+                
+                // Check adjacent positions for more plant parts
+                for dy in -1i32..=1 {
+                    for dx in -1i32..=1 {
+                        if dx == 0 && dy == 0 { continue; }
+                        
+                        let nx = (x as i32 + dx) as usize;
+                        let ny = (y as i32 + dy) as usize;
+                        
+                        if nx < self.width && ny < self.height && !visited.contains(&(nx, ny)) {
+                            let neighbor_tile = self.tiles[ny][nx];
+                            if neighbor_tile.is_plant() {
+                                // Check if sizes match (same plant)
+                                if let (Some(size1), Some(size2)) = (tile.get_size(), neighbor_tile.get_size()) {
+                                    if size1 == size2 {
+                                        to_check.push((nx, ny));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        connected
+    }
+    
+    /// Check if an entire pillbug group is unsupported
+    fn is_pillbug_group_unsupported(&self, segments: &[(usize, usize, TileType)]) -> bool {
+        // If any segment has solid support, the entire group is supported
+        for (x, y, _) in segments {
+            if !self.is_pillbug_segment_unsupported(*x, *y) {
+                return false;
+            }
+        }
+        true
+    }
+    
+    /// Check if an entire plant group is unsupported
+    fn is_plant_group_unsupported(&self, parts: &[(usize, usize, TileType)]) -> bool {
+        // Check if any part has solid support (dirt, sand, other solid ground)
+        for (x, y, _) in parts {
+            // Check all 8 directions for solid support
+            for dy in -1i32..=1 {
+                for dx in -1i32..=1 {
+                    if dx == 0 && dy == 0 { continue; }
+                    
+                    let nx = (*x as i32 + dx) as usize;
+                    let ny = (*y as i32 + dy) as usize;
+                    
+                    if nx < self.width && ny < self.height {
+                        match self.tiles[ny][nx] {
+                            TileType::Dirt | TileType::Sand => return false, // Solid support found
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            
+            // Also check if at world bottom
+            if *y >= self.height - 1 {
+                return false;
+            }
+        }
+        true
+    }
+    
+    /// Check if a group can move down (all spaces below are empty)
+    fn can_move_group_down(&self, group: &[(usize, usize, TileType)], new_tiles: &Vec<Vec<TileType>>) -> bool {
+        for (x, y, _) in group {
+            // Check if the position below is available
+            if *y + 1 >= self.height {
+                return false; // Can't fall past bottom
+            }
+            
+            let below_pos = (*x, *y + 1);
+            let below_tile = new_tiles[below_pos.1][below_pos.0];
+            
+            // Position must be empty or will be vacated by another group member falling
+            if below_tile != TileType::Empty {
+                // Check if it's occupied by another member of the same group
+                let occupied_by_group = group.iter().any(|(gx, gy, _)| *gx == below_pos.0 && *gy == below_pos.1);
+                if !occupied_by_group {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+    
+    /// Move a group down by one position
+    fn move_group_down(&self, group: &[(usize, usize, TileType)], new_tiles: &mut Vec<Vec<TileType>>) {
+        // First clear all current positions
+        for (x, y, _) in group {
+            new_tiles[*y][*x] = TileType::Empty;
+        }
+        
+        // Then place all tiles in new positions
+        for (x, y, tile) in group {
+            new_tiles[*y + 1][*x] = *tile;
+        }
+    }
+    
     /// Enhanced water physics with depth-based flow mechanics and pooling
     fn process_water_physics(&self, x: usize, y: usize, depth: u8, new_tiles: &mut Vec<Vec<TileType>>, rng: &mut impl Rng) {
         let biome = self.get_biome_at(x, y);
         let moisture_retention = biome.moisture_retention();
+        
+        // Water wetting earth - water can soak into dirt/sand instead of just piling up
+        if depth <= 80 && rng.gen_bool(0.15) { // Moderate chance for light/medium water to soak in
+            // Check if there's dirt or sand adjacent that can absorb water
+            let absorption_positions = [
+                (x, y.saturating_add(1).min(self.height - 1)), // Below
+                (x.saturating_sub(1), y), (x.saturating_add(1).min(self.width - 1), y), // Sides
+            ];
+            
+            for (ax, ay) in absorption_positions.iter() {
+                if *ax < self.width && *ay < self.height {
+                    match new_tiles[*ay][*ax] {
+                        TileType::Dirt | TileType::Sand => {
+                            // Water soaks into the earth, reducing water depth
+                            let absorption_amount = match depth {
+                                0..=30 => depth, // Light water completely absorbed
+                                31..=50 => 20 + rng.gen_range(0..15), // Partial absorption
+                                _ => 10 + rng.gen_range(0..20), // Heavy water partially absorbed
+                            };
+                            
+                            let remaining_depth = depth.saturating_sub(absorption_amount);
+                            if remaining_depth > 10 {
+                                new_tiles[y][x] = TileType::Water(remaining_depth);
+                            } else {
+                                new_tiles[y][x] = TileType::Empty; // Water fully absorbed
+                            }
+                            return; // Water absorbed, skip other physics
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
         
         // Calculate evaporation based on depth, biome, and environmental conditions
         let base_evaporation = match depth {

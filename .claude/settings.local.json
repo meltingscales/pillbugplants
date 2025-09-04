@@ -18,7 +18,8 @@
       "Bash(dpkg:*)",
       "Bash(sudo apt remove:*)",
       "Bash(sudo -S apt remove:*)",
-      "Bash(source:*)"
+      "Bash(source:*)",
+      "Bash(timeout 10s cargo run)"
     ],
     "deny": [],
     "ask": []
