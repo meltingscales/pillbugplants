@@ -1,6 +1,6 @@
 use std::fmt;
 use rand::{Rng, seq::SliceRandom};
-use crate::types::{TileType, Size, random_size, MovementStrategy};
+use crate::types::{TileType, Size, random_size, MovementStrategy, Season};
 
 pub struct World {
     pub tiles: Vec<Vec<TileType>>,
@@ -9,6 +9,9 @@ pub struct World {
     pub tick: u64,
     pub day_cycle: f32,
     pub rain_intensity: f32,
+    pub season_cycle: f32,     // 0.0 = Spring, 0.25 = Summer, 0.5 = Fall, 0.75 = Winter
+    pub temperature: f32,      // -1.0 to 1.0, affects growth rates
+    pub humidity: f32,         // 0.0 to 1.0, affects rain and plant growth
 }
 
 impl World {
@@ -21,6 +24,9 @@ impl World {
             tick: 0,
             day_cycle: 0.0,
             rain_intensity: 0.0,
+            season_cycle: 0.0,   // Start in spring
+            temperature: 0.3,    // Mild spring temperature
+            humidity: 0.5,       // Moderate humidity
         };
         
         world.generate_initial_world();
@@ -31,10 +37,25 @@ impl World {
         self.tick += 1;
         self.day_cycle = (self.tick as f32 * 0.01) % (2.0 * std::f32::consts::PI);
         
-        // Rain cycle - more likely during night
+        // Seasonal cycle - complete season change every ~1600 ticks
+        self.season_cycle = (self.tick as f32 * 0.001) % 1.0;
+        
+        // Update seasonal weather parameters
+        self.update_seasonal_weather();
+        
+        // Rain cycle - affected by season and humidity
         let mut rng = rand::thread_rng();
-        if self.day_cycle.sin() < -0.3 && rng.gen_bool(0.05) {
-            self.rain_intensity = rng.gen_range(0.1..0.8);
+        let base_rain_chance = 0.05 * self.humidity;
+        let seasonal_rain_modifier = match self.get_current_season() {
+            Season::Spring => 1.5,  // Rainy season
+            Season::Summer => 0.7,  // Drier season
+            Season::Fall => 1.3,    // Return of rains
+            Season::Winter => 0.5,  // Cold, less rain
+        };
+        
+        // Rain more likely during night and based on seasonal patterns
+        if self.day_cycle.sin() < -0.3 && rng.gen_bool((base_rain_chance * seasonal_rain_modifier) as f64) {
+            self.rain_intensity = rng.gen_range(0.1..(0.8 * self.humidity));
         } else if rng.gen_bool(0.02) {
             self.rain_intensity *= 0.95; // Rain gradually stops
         }
@@ -49,6 +70,74 @@ impl World {
     
     pub fn is_day(&self) -> bool {
         self.day_cycle.sin() > 0.0
+    }
+    
+    pub fn get_current_season(&self) -> Season {
+        match (self.season_cycle * 4.0) as u32 % 4 {
+            0 => Season::Spring,
+            1 => Season::Summer,
+            2 => Season::Fall,
+            _ => Season::Winter,
+        }
+    }
+    
+    pub fn get_season_name(&self) -> &'static str {
+        match self.get_current_season() {
+            Season::Spring => "Spring",
+            Season::Summer => "Summer", 
+            Season::Fall => "Fall",
+            Season::Winter => "Winter",
+        }
+    }
+    
+    fn update_seasonal_weather(&mut self) {
+        // Calculate target temperature and humidity based on season
+        let (target_temp, target_humidity) = match self.get_current_season() {
+            Season::Spring => (0.3, 0.7),   // Mild and moist
+            Season::Summer => (0.8, 0.3),   // Hot and dry
+            Season::Fall => (0.1, 0.6),     // Cool and moderately moist
+            Season::Winter => (-0.5, 0.4),  // Cold and variable
+        };
+        
+        // Add some seasonal variation using sine waves
+        let season_progress = (self.season_cycle * 4.0) % 1.0; // Progress within current season
+        let temp_variation = (season_progress * 2.0 * std::f32::consts::PI).sin() * 0.2;
+        let humidity_variation = ((season_progress + 0.5) * 2.0 * std::f32::consts::PI).sin() * 0.15;
+        
+        // Gradually adjust temperature and humidity toward targets
+        let target_temp_with_var = (target_temp + temp_variation).clamp(-1.0, 1.0);
+        let target_humidity_with_var = (target_humidity + humidity_variation).clamp(0.1, 1.0);
+        
+        self.temperature += (target_temp_with_var - self.temperature) * 0.02; // Slow change
+        self.humidity += (target_humidity_with_var - self.humidity) * 0.03;   // Slightly faster change
+        
+        // Clamp values to valid ranges
+        self.temperature = self.temperature.clamp(-1.0, 1.0);
+        self.humidity = self.humidity.clamp(0.1, 1.0);
+    }
+    
+    fn get_seasonal_growth_modifier(&self) -> f32 {
+        // Base seasonal multipliers
+        let season_multiplier = match self.get_current_season() {
+            Season::Spring => 1.4,  // Peak growth season
+            Season::Summer => 0.8,  // Slower growth due to heat/drought
+            Season::Fall => 1.1,    // Second growth period
+            Season::Winter => 0.3,  // Minimal growth
+        };
+        
+        // Temperature effects (optimal around 0.2-0.4)
+        let temp_multiplier = if self.temperature > 0.6 {
+            0.6 // Too hot, growth slows
+        } else if self.temperature < -0.3 {
+            0.2 // Too cold, growth nearly stops
+        } else {
+            1.0 + (0.3 - (self.temperature - 0.3).abs()) * 0.5 // Optimal range bonus
+        };
+        
+        // Humidity effects (plants need moisture)
+        let humidity_multiplier = 0.5 + self.humidity * 0.8; // 0.5 to 1.3 range
+        
+        season_multiplier * temp_multiplier * humidity_multiplier
     }
     
     // Simplified stub implementations - these would be expanded from the original
@@ -344,8 +433,9 @@ impl World {
                         } else {
                             new_tiles[y][x] = TileType::PlantStem(new_age, size);
                             
-                            // Plant growth - grows leaves, buds, roots, and extends
-                            if rng.gen_bool(0.1 * growth_rate as f64) {
+                            // Plant growth - affected by seasonal conditions
+                            let seasonal_growth_rate = self.get_seasonal_growth_modifier() * growth_rate;
+                            if rng.gen_bool(0.1 * seasonal_growth_rate as f64) {
                                 // Try to grow upward (extend stem)
                                 if y > 0 && self.tiles[y - 1][x] == TileType::Empty && rng.gen_bool(0.3) {
                                     new_tiles[y - 1][x] = TileType::PlantStem(0, size);
@@ -379,7 +469,8 @@ impl World {
                         let new_age = age.saturating_add(1);
                         let growth_rate = size.growth_rate_multiplier();
                         
-                        if new_age > 25 && rng.gen_bool(0.15 * growth_rate as f64) {
+                        let seasonal_growth_rate = self.get_seasonal_growth_modifier() * growth_rate;
+                        if new_age > 25 && rng.gen_bool(0.15 * seasonal_growth_rate as f64) {
                             // Bud can mature into branch or flower
                             if rng.gen_bool(0.6) {
                                 // 60% chance to become a branch for Y-shaped growth
@@ -404,7 +495,8 @@ impl World {
                             new_tiles[y][x] = TileType::PlantBranch(new_age, size);
                             
                             // Branches grow diagonally and can spawn leaves/buds
-                            if rng.gen_bool(0.08 * growth_rate as f64) {
+                            let seasonal_growth_rate = self.get_seasonal_growth_modifier() * growth_rate;
+                            if rng.gen_bool(0.08 * seasonal_growth_rate as f64) {
                                 // Diagonal growth patterns for Y-shaped branching
                                 let directions = [(-1, -1), (1, -1), (-1, 1), (1, 1)];
                                 if let Some(&(dx, dy)) = directions.choose(&mut rng) {
@@ -433,8 +525,9 @@ impl World {
                         } else {
                             new_tiles[y][x] = TileType::PlantFlower(new_age, size);
                             
-                            // Flowers spread seeds
-                            if rng.gen_bool(0.05 * size.growth_rate_multiplier() as f64) {
+                            // Flowers spread seeds - more active in good weather
+                            let seasonal_growth_rate = self.get_seasonal_growth_modifier() * size.growth_rate_multiplier();
+                            if rng.gen_bool(0.05 * seasonal_growth_rate as f64) {
                                 let spread_distance = match size {
                                     Size::Small => 3,
                                     Size::Medium => 5,
@@ -979,6 +1072,8 @@ impl fmt::Display for World {
         }
         writeln!(f, "Tick: {}", self.tick)?;
         writeln!(f, "Day/Night: {}", if self.is_day() { "Day" } else { "Night" })?;
+        writeln!(f, "Season: {} | Temperature: {:.1} | Humidity: {:.1}", 
+                 self.get_season_name(), self.temperature, self.humidity)?;
         writeln!(f, "Rain intensity: {:.2}", self.rain_intensity)?;
         Ok(())
     }

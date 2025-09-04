@@ -1,6 +1,14 @@
 use rand::Rng;
 use ratatui::style::Color;
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum Season {
+    Spring = 0, // Growth season - mild temperature, high humidity
+    Summer = 1, // Hot season - high temperature, low humidity
+    Fall = 2,   // Harvest season - moderate temperature, increasing humidity
+    Winter = 3, // Cold season - low temperature, variable humidity
+}
+
 #[derive(Debug, Clone)]
 pub enum MovementStrategy {
     SeekFood((i32, i32)),    // Direction to food

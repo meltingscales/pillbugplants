@@ -93,9 +93,11 @@ pub fn ui(f: &mut Frame, app: &App) {
     } else {
         String::new()
     };
+    let season_info = format!(" | {} | Temp: {:.1} | Humid: {:.1}", 
+        app.world.get_season_name(), app.world.temperature, app.world.humidity);
     let info = Paragraph::new(format!(
-        "Tick: {} | {}{} | Press 'q' to quit | Press 't' for taxonomy",
-        app.world.tick, day_night, rain_status
+        "Tick: {} | {}{}{} | Press 'q' to quit | Press 't' for taxonomy",
+        app.world.tick, day_night, rain_status, season_info
     ))
     .block(Block::default().title("Info").borders(Borders::ALL));
     f.render_widget(info, chunks[1]);
