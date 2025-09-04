@@ -659,33 +659,75 @@ impl World {
             Size::Large => 5,
         };
         
-        // Look for food in the area
+        // Look for food, social targets, and dangers in the area
         let mut food_positions = Vec::new();
         let mut pillbug_positions = Vec::new();
+        let mut danger_positions = Vec::new();
         
         for dy in -(search_radius as i32)..=(search_radius as i32) {
             for dx in -(search_radius as i32)..=(search_radius as i32) {
                 let nx = (x as i32 + dx) as usize;
                 let ny = (y as i32 + dy) as usize;
                 if nx < self.width && ny < self.height {
-                    match self.tiles[ny][nx] {
-                        TileType::PlantLeaf(_, _) | TileType::PlantWithered(_, _) | TileType::Nutrient => {
-                            food_positions.push((dx, dy));
+                    let tile = self.tiles[ny][nx];
+                    
+                    // Check for food using utility method
+                    if tile.is_plant() || matches!(tile, TileType::Nutrient) {
+                        // Only count living/withering plants as food
+                        match tile {
+                            TileType::PlantLeaf(_, _) | TileType::PlantWithered(_, _) | TileType::Nutrient => {
+                                food_positions.push((dx, dy));
+                            },
+                            _ => {}
+                        }
+                    }
+                    
+                    // Check for social interactions
+                    if let TileType::PillbugHead(_, other_size) = tile {
+                        if other_size == size && !(dx == 0 && dy == 0) {
+                            pillbug_positions.push((dx, dy));
+                        }
+                    }
+                    
+                    // Detect dangers - larger pillbugs, unstable areas, deep water
+                    match tile {
+                        TileType::PillbugHead(_, other_size) if other_size as u8 > size as u8 => {
+                            // Larger pillbugs are threatening
+                            danger_positions.push((dx, dy));
                         },
-                        TileType::PillbugHead(_, other_size) if other_size == size => {
-                            // Same size pillbugs for social behavior
-                            if !(dx == 0 && dy == 0) {  // Not self
-                                pillbug_positions.push((dx, dy));
+                        TileType::Water => {
+                            // Standing water is dangerous
+                            if dy > 0 {  // Water below is especially dangerous
+                                danger_positions.push((dx, dy));
                             }
                         },
-                        _ => {}
+                        _ => {
+                            // Check for unstable areas (floating sand)
+                            if matches!(tile, TileType::Sand) {
+                                // Check if sand has support
+                                if ny + 1 < self.height && matches!(self.tiles[ny + 1][nx], TileType::Empty | TileType::Water) {
+                                    danger_positions.push((dx, dy));
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
         
-        // Priority: Food > Social > Explore
-        if !food_positions.is_empty() {
+        // Priority: Avoid Danger > Food > Social > Explore
+        if !danger_positions.is_empty() {
+            // Find closest danger and move away from it
+            let closest_danger = danger_positions.iter()
+                .min_by_key(|(dx, dy)| dx.abs() + dy.abs())
+                .unwrap();
+            
+            // Move in opposite direction
+            let dir_x = if closest_danger.0 > 0 { -1 } else if closest_danger.0 < 0 { 1 } else { 0 };
+            let dir_y = if closest_danger.1 > 0 { -1 } else if closest_danger.1 < 0 { 1 } else { 0 };
+            
+            MovementStrategy::Avoid((dir_x, dir_y))
+        } else if !food_positions.is_empty() {
             // Find closest food
             let closest_food = food_positions.iter()
                 .min_by_key(|(dx, dy)| dx.abs() + dy.abs())
@@ -718,23 +760,28 @@ impl World {
         // Find connected body parts (should be adjacent)
         let mut segments = vec![(x, y, TileType::PillbugHead(age, size))];
         
-        // Look for body segments adjacent to head
+        // Look for body segments adjacent to head using utility methods
         for (dx, dy) in &[(0, 1), (1, 0), (-1, 0), (0, -1)] {
             let nx = (x as i32 + dx) as usize;
             let ny = (y as i32 + dy) as usize;
             if nx < self.width && ny < self.height {
-                if let TileType::PillbugBody(b_age, b_size) = self.tiles[ny][nx] {
-                    if b_size == size {  // Same bug
-                        segments.push((nx, ny, TileType::PillbugBody(b_age, b_size)));
-                        
-                        // Look for legs adjacent to body
-                        for (dx2, dy2) in &[(0, 1), (1, 0), (-1, 0), (0, -1)] {
-                            let lx = (nx as i32 + dx2) as usize;
-                            let ly = (ny as i32 + dy2) as usize;
-                            if lx < self.width && ly < self.height {
-                                if let TileType::PillbugLegs(l_age, l_size) = self.tiles[ly][lx] {
-                                    if l_size == size {
-                                        segments.push((lx, ly, TileType::PillbugLegs(l_age, l_size)));
+                let tile = self.tiles[ny][nx];
+                // Use is_pillbug utility to check if it's a pillbug part
+                if tile.is_pillbug() {
+                    if let TileType::PillbugBody(_b_age, b_size) = tile {
+                        if b_size == size {  // Same bug
+                            segments.push((nx, ny, tile));
+                            
+                            // Look for legs adjacent to body
+                            for (dx2, dy2) in &[(0, 1), (1, 0), (-1, 0), (0, -1)] {
+                                let lx = (nx as i32 + dx2) as usize;
+                                let ly = (ny as i32 + dy2) as usize;
+                                if lx < self.width && ly < self.height {
+                                    let leg_tile = self.tiles[ly][lx];
+                                    if let TileType::PillbugLegs(_l_age, l_size) = leg_tile {
+                                        if l_size == size && leg_tile.get_size() == Some(size) {
+                                            segments.push((lx, ly, leg_tile));
+                                        }
                                     }
                                 }
                             }
@@ -831,16 +878,20 @@ impl World {
     fn spawn_entities(&mut self) {
         let mut rng = rand::thread_rng();
         
-        // Count existing entities
+        // Count existing entities using utility methods
         let mut plant_count = 0;
         let mut pillbug_count = 0;
         
         for y in 0..self.height {
             for x in 0..self.width {
-                match self.tiles[y][x] {
-                    TileType::PlantStem(_, _) => plant_count += 1,
-                    TileType::PillbugHead(_, _) => pillbug_count += 1,
-                    _ => {}
+                let tile = self.tiles[y][x];
+                // Count plant stems as primary plant entities
+                if matches!(tile, TileType::PlantStem(_, _)) {
+                    plant_count += 1;
+                }
+                // Count pillbug heads as primary pillbug entities
+                if matches!(tile, TileType::PillbugHead(_, _)) {
+                    pillbug_count += 1;
                 }
             }
         }
