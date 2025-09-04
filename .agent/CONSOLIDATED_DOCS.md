@@ -217,6 +217,10 @@ Four distinct biome types create **microenvironmental diversity**:
 - **Ecosystem statistics system** with real-time monitoring and health metrics
 
 ### Latest Updates (Current Session)
+- **Performance monitoring system**: Comprehensive lag detection and system profiling
+- **Toggleable performance display**: Press 'p' to show detailed performance metrics
+- **Real-time TPS measurement**: Tracks ticks per second and frame times
+- **System-level profiling**: Individual timing for physics, gravity, life updates, etc.
 - **Seed velocity system**: Flowers now shoot seeds with physics-based trajectories instead of dropping them nearby
 - **Projectile mechanics**: Seeds have velocity, bounce physics, and wind interactions during flight
 - **Water wetting earth**: Water can now soak into dirt/sand instead of just accumulating
@@ -231,6 +235,7 @@ Four distinct biome types create **microenvironmental diversity**:
 - **Advanced root feeding**: Roots can extract nutrients from nutrient-rich dirt over time
 - **Enhanced physics**: Better support detection for multi-segment organisms
 - **Improved realism**: More natural water behavior, object physics, and nutrient cycling
+- **Modularization started**: Began breaking world.rs into logical modules for better maintainability
 
 ---
 
