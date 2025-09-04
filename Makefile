@@ -6,58 +6,61 @@ all: help
 # Set PATH to include cargo binaries
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 
+# Rust toolchain to use (can be overridden with `make RUST_TOOLCHAIN=stable build`)
+RUST_TOOLCHAIN ?= nightly
+
 # Build the project
 build:
-	rustup run stable cargo build
+	rustup run $(RUST_TOOLCHAIN) cargo build
 
 # Build and run the project
 run:
-	rustup run stable cargo run
+	rustup run $(RUST_TOOLCHAIN) cargo run
 
 # Build release version
 release:
-	rustup run stable cargo build --release
+	rustup run $(RUST_TOOLCHAIN) cargo build --release
 
 # Run release version
 run-release:
-	rustup run stable cargo run --release
+	rustup run $(RUST_TOOLCHAIN) cargo run --release
 
 # Check code without building
 check:
-	rustup run stable cargo check
+	rustup run $(RUST_TOOLCHAIN) cargo check
 
 # Run tests
 test:
-	rustup run stable cargo test
+	rustup run $(RUST_TOOLCHAIN) cargo test
 
 # Clean build artifacts
 clean:
-	rustup run stable cargo clean
+	rustup run $(RUST_TOOLCHAIN) cargo clean
 
 # Install dependencies
 install:
-	rustup run stable cargo fetch
+	rustup run $(RUST_TOOLCHAIN) cargo fetch
 
 # Format code
 fmt:
-	rustup run stable cargo fmt
+	rustup run $(RUST_TOOLCHAIN) cargo fmt
 
 # Run clippy linter
 clippy:
-	rustup run stable cargo clippy
+	rustup run $(RUST_TOOLCHAIN) cargo clippy
 
 # Full check (format, clippy, test, build)
 full-check: fmt clippy test build
 
 # AI simulation testing
 sim-test: build
-	rustup run stable cargo run -- --sim-ticks=500 --output-file=simulation_test.txt
+	rustup run $(RUST_TOOLCHAIN) cargo run -- --sim-ticks=500 --output-file=simulation_test.txt
 
 sim-short: build
-	rustup run stable cargo run -- --sim-ticks=100
+	rustup run $(RUST_TOOLCHAIN) cargo run -- --sim-ticks=100
 
 sim-long: build
-	rustup run stable cargo run -- --sim-ticks=1000 --output-file=long_simulation.txt
+	rustup run $(RUST_TOOLCHAIN) cargo run -- --sim-ticks=1000 --output-file=long_simulation.txt
 
 # Count lines of code
 tokei:
@@ -82,3 +85,7 @@ help:
 	@echo "  sim-long   - Run 1000-tick simulation and save to file"
 	@echo "  tokei      - Count lines of code"
 	@echo "  help       - Show this help"
+	@echo ""
+	@echo "Variables:"
+	@echo "  RUST_TOOLCHAIN - Rust toolchain to use (default: nightly)"
+	@echo "                   Example: make RUST_TOOLCHAIN=stable build"

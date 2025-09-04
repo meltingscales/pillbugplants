@@ -7,7 +7,9 @@
       "Bash(make:*)",
       "Bash(cargo check:*)",
       "Bash(cargo:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(timeout 3 cargo run)",
+      "Bash(rustup toolchain:*)"
     ],
     "deny": [],
     "ask": []
