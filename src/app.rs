@@ -13,6 +13,7 @@ use crate::world::World;
 pub struct App {
     pub world: World,
     pub show_taxonomy: bool,
+    pub show_performance: bool,
 }
 
 impl App {
@@ -20,6 +21,7 @@ impl App {
         App {
             world: World::new(width, height),
             show_taxonomy: false,
+            show_performance: false,
         }
     }
     
@@ -40,6 +42,7 @@ pub fn run_app<B: Backend>(
                 match key.code {
                     KeyCode::Char('q') => return Ok(()),
                     KeyCode::Char('t') => app.show_taxonomy = !app.show_taxonomy,
+                    KeyCode::Char('p') => app.show_performance = !app.show_performance,
                     _ => {}
                 }
             }
@@ -50,18 +53,35 @@ pub fn run_app<B: Backend>(
 }
 
 pub fn ui(f: &mut Frame, app: &App) {
-    let main_chunks = if app.show_taxonomy {
-        Layout::default()
-            .direction(Direction::Horizontal)
-            .margin(1)
-            .constraints([Constraint::Min(0), Constraint::Length(25)].as_ref())
-            .split(f.area())
-    } else {
-        Layout::default()
-            .direction(Direction::Horizontal)
-            .margin(1)
-            .constraints([Constraint::Min(0)].as_ref())
-            .split(f.area())
+    let main_chunks = match (app.show_taxonomy, app.show_performance) {
+        (true, true) => {
+            Layout::default()
+                .direction(Direction::Horizontal)
+                .margin(1)
+                .constraints([Constraint::Min(0), Constraint::Length(25), Constraint::Length(30)].as_ref())
+                .split(f.area())
+        },
+        (true, false) => {
+            Layout::default()
+                .direction(Direction::Horizontal)
+                .margin(1)
+                .constraints([Constraint::Min(0), Constraint::Length(25)].as_ref())
+                .split(f.area())
+        },
+        (false, true) => {
+            Layout::default()
+                .direction(Direction::Horizontal)
+                .margin(1)
+                .constraints([Constraint::Min(0), Constraint::Length(30)].as_ref())
+                .split(f.area())
+        },
+        (false, false) => {
+            Layout::default()
+                .direction(Direction::Horizontal)
+                .margin(1)
+                .constraints([Constraint::Min(0)].as_ref())
+                .split(f.area())
+        }
     };
 
     let chunks = Layout::default()
@@ -201,5 +221,40 @@ pub fn ui(f: &mut Frame, app: &App) {
             .block(Block::default().title("Taxonomy").borders(Borders::ALL))
             .wrap(ratatui::widgets::Wrap { trim: true });
         f.render_widget(taxonomy_panel, main_chunks[1]);
+    }
+    
+    // Performance panel (toggleable with 'p')
+    if app.show_performance {
+        let panel_index = if app.show_taxonomy { 2 } else { 1 };
+        
+        let perf = &app.world.performance;
+        let performance_text = vec![
+            Line::from("📊 Performance Metrics"),
+            Line::from(""),
+            Line::from(format!("TPS: {:.1}", perf.ticks_per_second)),
+            Line::from(format!("Frame time: {:.1}ms", perf.total_update_time.as_secs_f64() * 1000.0)),
+            Line::from(""),
+            Line::from("System breakdown:"),
+            Line::from(format!("Physics: {:.1}ms", perf.physics_time.as_secs_f64() * 1000.0)),
+            Line::from(format!("Gravity: {:.1}ms", perf.gravity_time.as_secs_f64() * 1000.0)),
+            Line::from(format!("Projectiles: {:.1}ms", perf.projectiles_time.as_secs_f64() * 1000.0)),
+            Line::from(format!("Wind: {:.1}ms", perf.wind_time.as_secs_f64() * 1000.0)),
+            Line::from(format!("Plant Support: {:.1}ms", perf.plant_support_time.as_secs_f64() * 1000.0)),
+            Line::from(format!("Nutrient Diffusion: {:.1}ms", perf.nutrient_diffusion_time.as_secs_f64() * 1000.0)),
+            Line::from(format!("Life Update: {:.1}ms", perf.life_update_time.as_secs_f64() * 1000.0)),
+            Line::from(format!("Spawn Entities: {:.1}ms", perf.spawn_entities_time.as_secs_f64() * 1000.0)),
+            Line::from(""),
+            Line::from(format!("Flying seeds: {}", app.world.get_projectile_count())),
+            Line::from(""),
+            Line::from("Performance tips:"),
+            Line::from("- Life Update is usually biggest"),
+            Line::from("- Physics scales with activity"),
+            Line::from("- Press 'p' to toggle this panel"),
+        ];
+        
+        let performance_panel = Paragraph::new(performance_text)
+            .block(Block::default().title("Performance").borders(Borders::ALL))
+            .wrap(ratatui::widgets::Wrap { trim: true });
+        f.render_widget(performance_panel, main_chunks[panel_index]);
     }
 }

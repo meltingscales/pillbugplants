@@ -145,19 +145,69 @@ impl World {
             self.rain_intensity *= 0.95; // Rain gradually stops
         }
         
+        // Timed system updates with performance profiling
+        let update_start = Instant::now();
+        
         self.spawn_rain();
+        
+        let physics_start = Instant::now();
         self.update_physics();
+        self.performance.physics_time = physics_start.elapsed();
+        
+        let gravity_start = Instant::now();
         self.apply_gravity();
+        self.performance.gravity_time = gravity_start.elapsed();
+        
+        let projectiles_start = Instant::now();
         self.update_seed_projectiles();
+        self.performance.projectiles_time = projectiles_start.elapsed();
+        
+        let wind_start = Instant::now();
         self.process_wind_effects();
+        self.performance.wind_time = wind_start.elapsed();
+        
+        let support_start = Instant::now();
         self.check_plant_support();
+        self.performance.plant_support_time = support_start.elapsed();
+        
+        let diffusion_start = Instant::now();
         self.diffuse_nutrients();
+        self.performance.nutrient_diffusion_time = diffusion_start.elapsed();
+        
+        let life_start = Instant::now();
         self.update_life();
+        self.performance.life_update_time = life_start.elapsed();
+        
+        let spawn_start = Instant::now();
         self.spawn_entities();
+        self.performance.spawn_entities_time = spawn_start.elapsed();
+        
+        // Calculate total update time and performance metrics
+        self.performance.total_update_time = update_start.elapsed();
+        
+        // Maintain rolling average of frame times (last 60 frames)
+        if self.performance.frame_times.len() >= 60 {
+            self.performance.frame_times.remove(0);
+        }
+        self.performance.frame_times.push(self.performance.total_update_time);
+        
+        // Calculate TPS based on average frame time
+        if !self.performance.frame_times.is_empty() {
+            let avg_frame_time: Duration = self.performance.frame_times.iter().sum::<Duration>() / self.performance.frame_times.len() as u32;
+            self.performance.ticks_per_second = if avg_frame_time.as_secs_f64() > 0.0 {
+                1.0 / avg_frame_time.as_secs_f64()
+            } else {
+                0.0
+            };
+        }
     }
     
     pub fn is_day(&self) -> bool {
         self.day_cycle.sin() > 0.0
+    }
+    
+    pub fn get_projectile_count(&self) -> usize {
+        self.seed_projectiles.len()
     }
     
     pub fn get_current_season(&self) -> Season {
