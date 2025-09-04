@@ -298,7 +298,9 @@ impl World {
                     
                     // Higher chance for rain to "stick" in wetlands, lower in drylands
                     if rng.gen_bool((accumulation_bonus * 0.8).min(1.0) as f64) {
-                        self.tiles[0][x] = TileType::Water;
+                        // Rain starts with moderate depth
+                        let rain_depth = (50.0 + self.rain_intensity * 100.0) as u8;
+                        self.tiles[0][x] = TileType::Water(rain_depth);
                     }
                 }
             }
@@ -318,7 +320,7 @@ impl World {
                         if new_tiles[y + 1][x] == TileType::Empty {
                             new_tiles[y][x] = TileType::Empty;
                             new_tiles[y + 1][x] = TileType::Sand;
-                        } else if !matches!(new_tiles[y + 1][x], TileType::Empty | TileType::Water) {
+                        } else if new_tiles[y + 1][x].blocks_water() {
                             // Try to slide diagonally if blocked
                             // Randomly choose left or right first for natural piling
                             let directions = if rng.gen_bool(0.5) {
@@ -340,51 +342,8 @@ impl World {
                             }
                         }
                     }
-                    TileType::Water => {
-                        // Check for biome-based evaporation
-                        let biome = self.get_biome_at(x, y);
-                        let moisture_retention = biome.moisture_retention();
-                        let evaporation_chance = (1.0 - moisture_retention) * 0.01; // Small base evaporation rate
-                        
-                        // Increase evaporation in dry biomes, especially during day and hot seasons
-                        let day_modifier = if self.is_day() { 1.5 } else { 0.8 };
-                        let temp_modifier = (self.temperature + 1.0) * 0.5; // 0.0 to 1.0 range
-                        let final_evaporation = evaporation_chance * day_modifier * (1.0 + temp_modifier);
-                        
-                        if rng.gen_bool(final_evaporation.min(1.0) as f64) {
-                            new_tiles[y][x] = TileType::Empty; // Evaporate
-                        } else {
-                            // Normal water flow physics
-                            if new_tiles[y + 1][x] == TileType::Empty {
-                                new_tiles[y][x] = TileType::Empty;
-                                new_tiles[y + 1][x] = TileType::Water;
-                            } else if !matches!(new_tiles[y + 1][x], TileType::Empty) {
-                                // Water spreads sideways when blocked
-                                // In wetlands, water tends to pool more
-                                let flow_resistance = if biome == Biome::Wetland { 0.5 } else { 0.7 };
-                                
-                                let directions = if rng.gen_bool(0.5) {
-                                    vec![(-1, 1), (1, 1), (-1, 0), (1, 0)]
-                                } else {
-                                    vec![(1, 1), (-1, 1), (1, 0), (-1, 0)]
-                                };
-                                
-                                for (dx, dy) in directions {
-                                    let nx = (x as i32 + dx) as usize;
-                                    let ny = (y as i32 + dy) as usize;
-                                    if nx < self.width && ny < self.height {
-                                        if new_tiles[ny][nx] == TileType::Empty {
-                                            // Flow chance modified by biome
-                                            if dy == 0 && rng.gen_bool(flow_resistance) || dy == 1 {
-                                                new_tiles[y][x] = TileType::Empty;
-                                                new_tiles[ny][nx] = TileType::Water;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    TileType::Water(depth) => {
+                        self.process_water_physics(x, y, depth, &mut new_tiles, &mut rng);
                     }
                     _ => {}
                 }
@@ -392,6 +351,142 @@ impl World {
         }
         
         self.tiles = new_tiles;
+    }
+    
+    /// Enhanced water physics with depth-based flow mechanics and pooling
+    fn process_water_physics(&self, x: usize, y: usize, depth: u8, new_tiles: &mut Vec<Vec<TileType>>, rng: &mut impl Rng) {
+        let biome = self.get_biome_at(x, y);
+        let moisture_retention = biome.moisture_retention();
+        
+        // Calculate evaporation based on depth, biome, and environmental conditions
+        let base_evaporation = match depth {
+            0..=30 => 0.08,   // Small droplets evaporate quickly
+            31..=80 => 0.02,  // Normal water evaporation rate
+            81..=150 => 0.01, // Deep water evaporates slowly
+            _ => 0.005,       // Very deep water barely evaporates
+        };
+        
+        let day_modifier = if self.is_day() { 1.5 } else { 0.8 };
+        let temp_modifier = (self.temperature + 1.0) * 0.5; // 0.0 to 1.0 range
+        let biome_modifier = 2.0 - moisture_retention; // 0.6 to 1.4 range
+        let final_evaporation = base_evaporation * day_modifier * (0.5 + temp_modifier) * biome_modifier;
+        
+        // Small chance of evaporation, higher for shallow water
+        if rng.gen_bool(final_evaporation.min(1.0) as f64) {
+            if depth <= 30 {
+                new_tiles[y][x] = TileType::Empty; // Complete evaporation
+            } else {
+                // Partial evaporation - reduce depth
+                let new_depth = depth.saturating_sub(10 + rng.gen_range(0..10));
+                if new_depth > 0 {
+                    new_tiles[y][x] = TileType::Water(new_depth);
+                } else {
+                    new_tiles[y][x] = TileType::Empty;
+                }
+            }
+            return;
+        }
+        
+        // Enhanced flow physics with depth-based pressure
+        if y + 1 < self.tiles.len() {
+            let below = new_tiles[y + 1][x];
+            
+            match below {
+                TileType::Empty => {
+                    // Water falls with momentum - deeper water falls faster and harder
+                    let fall_depth = if depth <= 50 { depth } else { depth.saturating_add(10) }; // Deep water gains momentum
+                    new_tiles[y][x] = TileType::Empty;
+                    new_tiles[y + 1][x] = TileType::Water(fall_depth.min(255));
+                    return;
+                }
+                TileType::Water(below_depth) => {
+                    // Water combines with water below, creating pressure
+                    let combined_depth = below_depth.saturating_add(depth / 3); // Some water flows down
+                    if combined_depth != below_depth {
+                        let flow_amount = combined_depth - below_depth;
+                        let remaining_depth = depth.saturating_sub(flow_amount);
+                        new_tiles[y + 1][x] = TileType::Water(combined_depth.min(255));
+                        if remaining_depth > 20 {
+                            new_tiles[y][x] = TileType::Water(remaining_depth);
+                        } else {
+                            new_tiles[y][x] = TileType::Empty;
+                        }
+                    }
+                }
+                _ => {} // Blocked by solid material
+            }
+        }
+        
+        // Horizontal flow with pressure-driven mechanics
+        let flow_pressure = depth as f32 / 255.0;
+        let flow_chance = flow_pressure * 0.8; // Deeper water flows more readily
+        
+        // In wetlands, reduce flow to encourage pooling
+        let biome_flow_resistance = match biome {
+            Biome::Wetland => 0.3,   // Strong resistance to encourage pooling
+            Biome::Woodland => 0.6,  // Some resistance under tree cover
+            Biome::Grassland => 0.8, // Normal flow
+            Biome::Drylands => 1.0,  // Flows away quickly
+        };
+        
+        if rng.gen_bool((flow_chance * biome_flow_resistance) as f64) {
+            // Find the best flow direction using elevation and existing water levels
+            let mut flow_targets = Vec::new();
+            
+            // Check all adjacent positions for flow potential
+            let directions = [(-1, 0), (1, 0), (-1, 1), (1, 1)]; // Horizontal and diagonal-down
+            
+            for (dx, dy) in directions.iter() {
+                let nx = x as i32 + dx;
+                let ny = y as i32 + dy;
+                
+                if nx >= 0 && nx < self.width as i32 && ny >= 0 && ny < new_tiles.len() as i32 {
+                    let nx = nx as usize;
+                    let ny = ny as usize;
+                    
+                    match new_tiles[ny][nx] {
+                        TileType::Empty => {
+                            let flow_priority = if *dy == 1 { 3 } else { 2 }; // Prefer diagonal flow downward
+                            flow_targets.push((nx, ny, flow_priority, 0u8));
+                        }
+                        TileType::Water(target_depth) => {
+                            // Flow into areas with lower water level
+                            if target_depth < depth.saturating_sub(20) {
+                                let flow_priority = if *dy == 1 { 2 } else { 1 }; // Lower priority than empty space
+                                flow_targets.push((nx, ny, flow_priority, target_depth));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            
+            // Sort by flow priority (higher priority first)
+            flow_targets.sort_by_key(|&(_, _, priority, _)| std::cmp::Reverse(priority));
+            
+            if let Some((target_x, target_y, _, target_depth)) = flow_targets.first() {
+                let flow_amount = if depth > 100 {
+                    depth / 3 // Deep water flows more aggressively
+                } else if depth > 50 {
+                    depth / 4
+                } else {
+                    depth / 5 // Shallow water flows conservatively
+                }.max(10);
+                
+                let remaining_depth = depth.saturating_sub(flow_amount);
+                let new_target_depth = target_depth.saturating_add(flow_amount);
+                
+                // Update target position
+                new_tiles[*target_y][*target_x] = TileType::Water(new_target_depth.min(255));
+                
+                // Update current position
+                if remaining_depth > 10 {
+                    new_tiles[y][x] = TileType::Water(remaining_depth);
+                } else {
+                    new_tiles[y][x] = TileType::Empty;
+                }
+            }
+        }
     }
     
     fn check_plant_support(&mut self) {
@@ -974,7 +1069,7 @@ impl World {
                             // Larger pillbugs are threatening
                             danger_positions.push((dx, dy));
                         },
-                        TileType::Water => {
+                        TileType::Water(_) => {
                             // Standing water is dangerous
                             if dy > 0 {  // Water below is especially dangerous
                                 danger_positions.push((dx, dy));
@@ -984,7 +1079,7 @@ impl World {
                             // Check for unstable areas (floating sand)
                             if matches!(tile, TileType::Sand) {
                                 // Check if sand has support
-                                if ny + 1 < self.height && matches!(self.tiles[ny + 1][nx], TileType::Empty | TileType::Water) {
+                                if ny + 1 < self.height && matches!(self.tiles[ny + 1][nx], TileType::Empty | TileType::Water(_)) {
                                     danger_positions.push((dx, dy));
                                 }
                             }

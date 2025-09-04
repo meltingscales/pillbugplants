@@ -107,7 +107,7 @@ pub enum TileType {
     Empty,
     Dirt,
     Sand,
-    Water,
+    Water(u8),        // Water with depth/pressure (0-255), affects flow behavior
     PlantStem(u8, Size),   // Main structural support, age 0-255, size
     PlantLeaf(u8, Size),   // Photosynthesis organs, age 0-150, size
     PlantBud(u8, Size),    // Growth points that become branches/flowers, age 0-50, size
@@ -129,7 +129,14 @@ impl TileType {
             TileType::Empty => ' ',
             TileType::Dirt => '#',
             TileType::Sand => '.',
-            TileType::Water => '~',
+            TileType::Water(depth) => {
+                match depth {
+                    0..=50 => '·',     // Light water/droplets
+                    51..=120 => '~',   // Normal water
+                    121..=200 => '≈',  // Deep water
+                    _ => '█',          // Very deep/pressurized water
+                }
+            },
             TileType::PlantStem(_, size) => size.to_char_modifier('|'),
             TileType::PlantLeaf(_, size) => size.to_char_modifier('L'),
             TileType::PlantBud(_, size) => size.to_char_modifier('o'),
@@ -151,7 +158,15 @@ impl TileType {
             TileType::Empty => Color::Black,
             TileType::Dirt => Color::Rgb(101, 67, 33),
             TileType::Sand => Color::Yellow,
-            TileType::Water => Color::Blue,
+            TileType::Water(depth) => {
+                let _intensity = (depth as u16 * 255 / 255).min(255) as u8;
+                match depth {
+                    0..=50 => Color::Rgb(180, 220, 255),      // Light blue droplets
+                    51..=120 => Color::Rgb(64, 164, 255),     // Normal blue water
+                    121..=200 => Color::Rgb(0, 100, 200),     // Deep blue water
+                    _ => Color::Rgb(0, 50, 150),              // Very deep dark blue
+                }
+            },
             TileType::PlantStem(age, size) => {
                 let base_intensity = (255u16.saturating_sub(age as u16)).max(80) as u8;
                 let size_boost = match size {
@@ -301,6 +316,25 @@ impl TileType {
             TileType::PillbugHead(_, size) | TileType::PillbugBody(_, size) | TileType::PillbugLegs(_, size) | TileType::PillbugDecaying(_, size) => Some(size),
             _ => None,
         }
+    }
+    
+    pub fn is_water(self) -> bool {
+        matches!(self, TileType::Water(_))
+    }
+    
+    pub fn get_water_depth(self) -> Option<u8> {
+        match self {
+            TileType::Water(depth) => Some(depth),
+            _ => None,
+        }
+    }
+    
+    pub fn can_water_flow_into(self) -> bool {
+        matches!(self, TileType::Empty)
+    }
+    
+    pub fn blocks_water(self) -> bool {
+        !matches!(self, TileType::Empty | TileType::Water(_))
     }
 }
 
