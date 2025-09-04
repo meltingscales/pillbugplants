@@ -24,13 +24,16 @@
 - [x] Improve plant growth patterns
 - [x] Add water flow physics
 - [x] Implement plant support checking
+- [x] Add intelligent pillbug movement with MovementStrategy
+- [x] Implement Y-shaped plant branching system
+- [x] Add size-based feeding efficiency for pillbugs
 
 ## Immediate Priorities
-- [ ] Implement MovementStrategy enum for better pillbug AI
-- [ ] Add plant branching patterns (Y-shaped growth)
-- [ ] Improve size-based feeding efficiency
+- [x] Implement MovementStrategy enum for better pillbug AI
+- [x] Add plant branching patterns (Y-shaped growth)
+- [x] Improve size-based feeding efficiency
 - [ ] Add plant-pillbug shelter interactions
-- [ ] Enhance bud development (branch vs flower choice)
+- [x] Enhance bud development (branch vs flower choice)
 
 ## Potential Future Improvements
 - [ ] Add seasonal variations
@@ -71,3 +74,12 @@
 - Day/night affects rain probability
 - Well-fed pillbugs reproduce
 - Plants seed new areas
+- Intelligent pillbug AI (food-seeking, social, exploration behaviors)
+- Y-shaped plant branching creates complex tree structures
+- Size-based feeding efficiency creates ecological niches
+
+### Recent Enhancements (2025-09-04)
+- **Movement AI**: Pillbugs now actively seek food, sometimes socialize, and explore intelligently
+- **Plant Branching**: Buds mature into branches (60%) or flowers (40%), creating Y-shaped growth
+- **Feeding Efficiency**: Large pillbugs excel with big plants, small pillbugs efficient with small food
+- **Branch Nutrition**: Branches provide more nutrition but are harder to eat than leaves
