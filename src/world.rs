@@ -552,6 +552,40 @@ impl World {
                             new_tiles[y][x] = TileType::PlantWithered(new_age, size);
                         }
                     }
+                    TileType::PlantDiseased(age, size) => {
+                        let new_age = age.saturating_add(1);
+                        
+                        if new_age > 60 {
+                            // Disease kills the plant, turning it into withered plant
+                            new_tiles[y][x] = TileType::PlantWithered(0, size);
+                        } else {
+                            new_tiles[y][x] = TileType::PlantDiseased(new_age, size);
+                            
+                            // Disease spreads to nearby healthy plants
+                            let spread_chance = 0.02 * (1.0 + new_age as f32 / 60.0); // Higher chance as disease progresses
+                            for dy in -1i32..=1 {
+                                for dx in -1i32..=1 {
+                                    if dx == 0 && dy == 0 { continue; }
+                                    
+                                    let nx = (x as i32 + dx) as usize;
+                                    let ny = (y as i32 + dy) as usize;
+                                    
+                                    if nx < self.width && ny < self.height && rng.gen_bool(spread_chance as f64) {
+                                        // Disease can infect healthy plant parts
+                                        match self.tiles[ny][nx] {
+                                            TileType::PlantLeaf(_leaf_age, leaf_size) |
+                                            TileType::PlantBud(_leaf_age, leaf_size) |
+                                            TileType::PlantBranch(_leaf_age, leaf_size) |
+                                            TileType::PlantFlower(_leaf_age, leaf_size) => {
+                                                new_tiles[ny][nx] = TileType::PlantDiseased(0, leaf_size);
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     TileType::PlantRoot(age, size) => {
                         let new_age = age.saturating_add(1);
                         let growth_rate = size.growth_rate_multiplier();
@@ -608,7 +642,7 @@ impl World {
                                 let ny = (y as i32 + dy) as usize;
                                 if nx < self.width && ny < self.height {
                                     match self.tiles[ny][nx] {
-                                        TileType::PlantLeaf(_, food_size) | TileType::PlantWithered(_, food_size) => {
+                                        TileType::PlantLeaf(_, food_size) | TileType::PlantWithered(_, food_size) | TileType::PlantDiseased(_, food_size) => {
                                             let eating_efficiency = self.calculate_eating_efficiency(size, food_size);
                                             if rng.gen_bool(eating_efficiency) {
                                                 new_tiles[ny][nx] = TileType::Empty;
@@ -816,7 +850,7 @@ impl World {
                     if tile.is_plant() || matches!(tile, TileType::Nutrient) {
                         // Only count living/withering plants as food
                         match tile {
-                            TileType::PlantLeaf(_, _) | TileType::PlantWithered(_, _) | TileType::Nutrient => {
+                            TileType::PlantLeaf(_, _) | TileType::PlantWithered(_, _) | TileType::PlantDiseased(_, _) | TileType::Nutrient => {
                                 food_positions.push((dx, dy));
                             },
                             _ => {}
@@ -1057,6 +1091,40 @@ impl World {
                     let size = random_size(&mut rng);
                     self.spawn_pillbug(x, y, size, 10);
                 }
+            }
+        }
+        
+        // Randomly introduce plant diseases (very rare)
+        // Disease introduction is more likely in humid conditions and during certain seasons
+        let base_disease_chance = 0.0005; // Realistic but observable disease chance
+        let seasonal_disease_modifier = match self.get_current_season() {
+            Season::Summer => 1.5,  // Hot humid summers increase disease risk
+            Season::Fall => 1.2,    // Wet fall conditions favor disease
+            Season::Winter => 0.3,  // Cold reduces most plant diseases  
+            Season::Spring => 1.0,  // Normal disease pressure
+        };
+        let humidity_modifier = 1.0 + self.humidity; // Higher humidity increases disease risk
+        let disease_chance = base_disease_chance * seasonal_disease_modifier * humidity_modifier;
+        
+        if rng.gen_bool(disease_chance as f64) {
+            // Find a random healthy plant part to infect
+            let mut attempts = 0;
+            while attempts < 50 {
+                let x = rng.gen_range(0..self.width);
+                let y = rng.gen_range(0..self.height);
+                
+                match self.tiles[y][x] {
+                    TileType::PlantLeaf(_age, size) |
+                    TileType::PlantBud(_age, size) |
+                    TileType::PlantBranch(_age, size) |
+                    TileType::PlantFlower(_age, size) => {
+                        // Introduce disease to this plant part
+                        self.tiles[y][x] = TileType::PlantDiseased(0, size);
+                        break;
+                    }
+                    _ => {}
+                }
+                attempts += 1;
             }
         }
     }

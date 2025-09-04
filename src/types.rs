@@ -78,6 +78,7 @@ impl Size {
             (Size::Small, 'O') => 'o',    // Small body
             (Size::Small, 'w') => 'v',    // Small legs
             (Size::Small, 'r') => '·',    // Small root
+            (Size::Small, '?') => '¿',    // Small diseased
             (Size::Large, '|') => '║',    // Large stem
             (Size::Large, 'L') => 'Ł',    // Large leaf
             (Size::Large, 'o') => 'O',    // Large bud
@@ -87,6 +88,7 @@ impl Size {
             (Size::Large, 'O') => '●',    // Large body
             (Size::Large, 'w') => 'W',    // Large legs
             (Size::Large, 'r') => 'R',    // Large root
+            (Size::Large, '?') => '‽',    // Large diseased
             _ => base_char, // Medium size keeps original char
         }
     }
@@ -104,6 +106,7 @@ pub enum TileType {
     PlantBranch(u8, Size), // Diagonal growth branches, age 0-120, size
     PlantFlower(u8, Size), // Reproductive organs, age 0-100, size
     PlantWithered(u8, Size), // Dying plant part, age 0-30 before becoming nutrient, size
+    PlantDiseased(u8, Size), // Diseased plant part, spreads to nearby plants, age 0-60, size
     PlantRoot(u8, Size),     // Underground root system for nutrient absorption, age 0-200, size
     PillbugHead(u8, Size),    // Head segment of pillbug, age 0-180, size
     PillbugBody(u8, Size),    // Body segment of pillbug, age 0-180, size
@@ -125,6 +128,7 @@ impl TileType {
             TileType::PlantBranch(_, size) => size.to_char_modifier('/'), // Diagonal branches
             TileType::PlantFlower(_, size) => size.to_char_modifier('*'),
             TileType::PlantWithered(_, size) => size.to_char_modifier('x'), // Withered plants
+            TileType::PlantDiseased(_, size) => size.to_char_modifier('?'), // Diseased plants
             TileType::PlantRoot(_, size) => size.to_char_modifier('r'), // Underground roots
             TileType::PillbugHead(_, size) => size.to_char_modifier('@'),
             TileType::PillbugBody(_, size) => size.to_char_modifier('O'),
@@ -206,6 +210,19 @@ impl TileType {
                 let intensity = (base_intensity as f32 * size_boost).min(255.0) as u8;
                 Color::Rgb(intensity, intensity / 2, 0) // Brown withered color
             },
+            TileType::PlantDiseased(age, size) => {
+                let disease_progress = age as f32 / 60.0; // 0.0 = fresh infection, 1.0 = full disease
+                let base_red = (100.0 + disease_progress * 155.0) as u8; // Red intensifies with disease
+                let base_green = (80.0 * (1.0 - disease_progress * 0.8)) as u8; // Green fades
+                let size_boost = match size {
+                    Size::Small => 0.8,
+                    Size::Medium => 1.0,
+                    Size::Large => 1.2,
+                };
+                let red = (base_red as f32 * size_boost).min(255.0) as u8;
+                let green = (base_green as f32 * size_boost).min(255.0) as u8;
+                Color::Rgb(red, green, 0) // Red-brown disease color
+            },
             TileType::PlantRoot(age, size) => {
                 let base_intensity = (200u16.saturating_sub(age as u16)).max(80) as u8;
                 let size_boost = match size {
@@ -262,7 +279,7 @@ impl TileType {
     }
     
     pub fn is_plant(self) -> bool {
-        matches!(self, TileType::PlantStem(_, _) | TileType::PlantLeaf(_, _) | TileType::PlantBud(_, _) | TileType::PlantBranch(_, _) | TileType::PlantFlower(_, _) | TileType::PlantWithered(_, _) | TileType::PlantRoot(_, _))
+        matches!(self, TileType::PlantStem(_, _) | TileType::PlantLeaf(_, _) | TileType::PlantBud(_, _) | TileType::PlantBranch(_, _) | TileType::PlantFlower(_, _) | TileType::PlantWithered(_, _) | TileType::PlantDiseased(_, _) | TileType::PlantRoot(_, _))
     }
     
     pub fn is_pillbug(self) -> bool {
@@ -272,7 +289,7 @@ impl TileType {
     pub fn get_size(self) -> Option<Size> {
         match self {
             TileType::PlantStem(_, size) | TileType::PlantLeaf(_, size) | 
-            TileType::PlantBud(_, size) | TileType::PlantBranch(_, size) | TileType::PlantFlower(_, size) | TileType::PlantWithered(_, size) | TileType::PlantRoot(_, size) |
+            TileType::PlantBud(_, size) | TileType::PlantBranch(_, size) | TileType::PlantFlower(_, size) | TileType::PlantWithered(_, size) | TileType::PlantDiseased(_, size) | TileType::PlantRoot(_, size) |
             TileType::PillbugHead(_, size) | TileType::PillbugBody(_, size) | TileType::PillbugLegs(_, size) | TileType::PillbugDecaying(_, size) => Some(size),
             _ => None,
         }
