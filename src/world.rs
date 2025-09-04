@@ -478,19 +478,16 @@ impl World {
                     let nx = nx as usize;
                     let ny = ny as usize;
                     
-                    match new_tiles[ny][nx] {
-                        TileType::Empty => {
-                            let flow_priority = if *dy == 1 { 3 } else { 2 }; // Prefer diagonal flow downward
-                            flow_targets.push((nx, ny, flow_priority, 0u8));
+                    let target_tile = new_tiles[ny][nx];
+                    if target_tile.can_water_flow_into() {
+                        let flow_priority = if *dy == 1 { 3 } else { 2 }; // Prefer diagonal flow downward
+                        flow_targets.push((nx, ny, flow_priority, 0u8));
+                    } else if let Some(target_depth) = target_tile.get_water_depth() {
+                        // Flow into areas with lower water level
+                        if target_depth < depth.saturating_sub(20) {
+                            let flow_priority = if *dy == 1 { 2 } else { 1 }; // Lower priority than empty space
+                            flow_targets.push((nx, ny, flow_priority, target_depth));
                         }
-                        TileType::Water(target_depth) => {
-                            // Flow into areas with lower water level
-                            if target_depth < depth.saturating_sub(20) {
-                                let flow_priority = if *dy == 1 { 2 } else { 1 }; // Lower priority than empty space
-                                flow_targets.push((nx, ny, flow_priority, target_depth));
-                            }
-                        }
-                        _ => {}
                     }
                 }
             }
@@ -602,14 +599,18 @@ impl World {
                 new_tiles[y][x] = TileType::Empty;
                 new_tiles[target_y][target_x] = particle;
             }
-            TileType::Water(depth) if depth <= 50 => {
-                // Light water can be displaced by wind particles
-                if particle.is_light_particle() {
-                    new_tiles[y][x] = TileType::Empty;
-                    new_tiles[target_y][target_x] = particle;
-                    
-                    // Try to move the displaced water to adjacent positions
-                    self.try_displace_water(target_x, target_y, TileType::Water(depth), new_tiles, rng);
+            target_tile if target_tile.is_water() => {
+                if let Some(depth) = target_tile.get_water_depth() {
+                    if depth <= 50 {
+                        // Light water can be displaced by wind particles
+                        if particle.is_light_particle() {
+                            new_tiles[y][x] = TileType::Empty;
+                            new_tiles[target_y][target_x] = particle;
+                            
+                            // Try to move the displaced water to adjacent positions
+                            self.try_displace_water(target_x, target_y, target_tile, new_tiles, rng);
+                        }
+                    }
                 }
             }
             _ => {
@@ -1338,7 +1339,7 @@ impl World {
                             // Larger pillbugs are threatening
                             danger_positions.push((dx, dy));
                         },
-                        TileType::Water(_) => {
+                        tile if tile.is_water() => {
                             // Standing water is dangerous
                             if dy > 0 {  // Water below is especially dangerous
                                 danger_positions.push((dx, dy));
@@ -1348,7 +1349,7 @@ impl World {
                             // Check for unstable areas (floating sand)
                             if matches!(tile, TileType::Sand) {
                                 // Check if sand has support
-                                if ny + 1 < self.height && matches!(self.tiles[ny + 1][nx], TileType::Empty | TileType::Water(_)) {
+                                if ny + 1 < self.height && (self.tiles[ny + 1][nx] == TileType::Empty || self.tiles[ny + 1][nx].is_water()) {
                                     danger_positions.push((dx, dy));
                                 }
                             }

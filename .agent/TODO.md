@@ -19,9 +19,9 @@
 
 ## Next Priority Features
 - [✅] Implement plant disease/infection spread system
-- [ ] Add biome variations with distinct wet/dry microenvironments
-- [ ] Create more sophisticated water flow and pooling mechanics
-- [ ] Add wind effects on seed dispersal and small particles
+- [✅] Add biome variations with distinct wet/dry microenvironments
+- [✅] Create more sophisticated water flow and pooling mechanics
+- [✅] Add wind effects on seed dispersal and small particles
 
 ## Engine Enhancements
 - [ ] Optimize physics calculations for larger worlds
@@ -62,3 +62,24 @@
 - 🎉 Advanced AI behaviors with survival instincts and resource competition
 - 🎉 Underground root networks actively reshape nutrient distribution
 - 🎉 Plant disease/infection system with seasonal spread patterns and ecosystem pressure
+- 🎉 **Comprehensive biome variation system** with four distinct microenvironments:
+  * **Wetland**: High moisture retention, lush plant growth, water pooling
+  * **Grassland**: Balanced conditions, moderate growth and moisture
+  * **Drylands**: Low moisture, sparse vegetation, quick evaporation, sandy soil
+  * **Woodland**: Dense plant growth, rich nutrients, extensive root systems
+- 🎉 Biome-influenced terrain generation, water physics, and plant ecology
+- 🎉 Regional biome maps with natural boundaries create realistic ecological gradients
+- 🎉 **Sophisticated water flow and pooling mechanics** with depth-based physics:
+  * **Depth visualization**: Droplets (·), normal (~), deep (≈), very deep (█) water
+  * **Pressure-driven flow**: Deeper water flows more readily, creates realistic streams
+  * **Biome-specific pooling**: Wetlands retain water, drylands drain quickly
+  * **Momentum physics**: Falling water gains depth, water seeks equilibrium levels
+  * **Enhanced evaporation**: Depth, biome, temperature, and day/night affect evaporation rates
+- 🎉 **Comprehensive wind effects system** with realistic particle dispersal:
+  * **Dynamic wind patterns**: Seasonal direction changes (Spring easterly, Fall westerly)
+  * **Seed dispersal mechanics**: Flowers produce seeds that travel with wind currents
+  * **Spore transmission**: Diseased plants generate airborne spores for infection spread
+  * **Size-based wind susceptibility**: Small seeds highly mobile, large seeds more stable
+  * **Environmental feedback**: Wind strength affects seed/spore generation rates
+  * **Particle physics**: Wind-particle collisions can displace light water droplets
+  * **Lifecycle systems**: Seeds age, germinate, or decay; spores spread disease then fade
