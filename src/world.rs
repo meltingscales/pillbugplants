@@ -1,6 +1,6 @@
 use std::fmt;
 use rand::{Rng, seq::SliceRandom};
-use crate::types::{TileType, Size, random_size};
+use crate::types::{TileType, Size, random_size, MovementStrategy};
 
 pub struct World {
     pub tiles: Vec<Vec<TileType>>,
@@ -558,6 +558,78 @@ impl World {
         self.tiles = new_tiles;
     }
     
+    fn determine_movement_strategy(&self, x: usize, y: usize, size: Size, age: u8) -> MovementStrategy {
+        let mut rng = rand::thread_rng();
+        
+        // Young pillbugs are more exploratory
+        if age < 20 {
+            return MovementStrategy::Explore;
+        }
+        
+        // Older pillbugs rest more
+        if age > 120 {
+            return if rng.gen_bool(0.6) { MovementStrategy::Rest } else { MovementStrategy::Explore };
+        }
+        
+        let search_radius = match size {
+            Size::Small => 3,
+            Size::Medium => 4,
+            Size::Large => 5,
+        };
+        
+        // Look for food in the area
+        let mut food_positions = Vec::new();
+        let mut pillbug_positions = Vec::new();
+        
+        for dy in -(search_radius as i32)..=(search_radius as i32) {
+            for dx in -(search_radius as i32)..=(search_radius as i32) {
+                let nx = (x as i32 + dx) as usize;
+                let ny = (y as i32 + dy) as usize;
+                if nx < self.width && ny < self.height {
+                    match self.tiles[ny][nx] {
+                        TileType::PlantLeaf(_, _) | TileType::PlantWithered(_, _) | TileType::Nutrient => {
+                            food_positions.push((dx, dy));
+                        },
+                        TileType::PillbugHead(_, other_size) if other_size == size => {
+                            // Same size pillbugs for social behavior
+                            if !(dx == 0 && dy == 0) {  // Not self
+                                pillbug_positions.push((dx, dy));
+                            }
+                        },
+                        _ => {}
+                    }
+                }
+            }
+        }
+        
+        // Priority: Food > Social > Explore
+        if !food_positions.is_empty() {
+            // Find closest food
+            let closest_food = food_positions.iter()
+                .min_by_key(|(dx, dy)| dx.abs() + dy.abs())
+                .unwrap();
+            
+            // Convert to unit direction
+            let dir_x = if closest_food.0 > 0 { 1 } else if closest_food.0 < 0 { -1 } else { 0 };
+            let dir_y = if closest_food.1 > 0 { 1 } else if closest_food.1 < 0 { -1 } else { 0 };
+            
+            MovementStrategy::SeekFood((dir_x, dir_y))
+        } else if !pillbug_positions.is_empty() && rng.gen_bool(0.3) {
+            // Sometimes seek social interaction
+            let closest_pillbug = pillbug_positions.iter()
+                .min_by_key(|(dx, dy)| dx.abs() + dy.abs())
+                .unwrap();
+            
+            let dir_x = if closest_pillbug.0 > 0 { 1 } else if closest_pillbug.0 < 0 { -1 } else { 0 };
+            let dir_y = if closest_pillbug.1 > 0 { 1 } else if closest_pillbug.1 < 0 { -1 } else { 0 };
+            
+            MovementStrategy::Social((dir_x, dir_y))
+        } else {
+            // Default to exploration or rest
+            if rng.gen_bool(0.7) { MovementStrategy::Explore } else { MovementStrategy::Rest }
+        }
+    }
+    
     fn move_pillbug(&self, new_tiles: &mut Vec<Vec<TileType>>, x: usize, y: usize, size: Size, age: u8) {
         let mut rng = rand::thread_rng();
         
@@ -590,27 +662,39 @@ impl World {
             }
         }
         
-        // Possible movement directions
-        let moves = [(-1, 0), (1, 0), (0, -1), (0, 1)];
-        let (dx, dy) = moves.choose(&mut rng).unwrap();
+        // Use movement strategy to determine direction
+        let strategy = self.determine_movement_strategy(x, y, size, age);
+        let (dx, dy) = strategy.get_movement_vector(&mut rng);
+        
+        // Skip movement if strategy says not to move
+        if !strategy.should_move(&mut rng) {
+            return;
+        }
         
         // Check if movement is possible
-        let new_x = (x as i32 + dx) as usize;
-        let new_y = (y as i32 + dy) as usize;
+        if dx == 0 && dy == 0 {
+            return;  // No movement
+        }
         
-        if new_x < self.width && new_y < self.height {
+        let new_x = x as i32 + dx;
+        let new_y = y as i32 + dy;
+        
+        if new_x >= 0 && new_x < self.width as i32 && new_y >= 0 && new_y < self.height as i32 {
             // Check if all segments can move
             let mut can_move = true;
             let mut new_positions = Vec::new();
             
             for (seg_x, seg_y, _) in &segments {
-                let new_seg_x = (*seg_x as i32 + dx) as usize;
-                let new_seg_y = (*seg_y as i32 + dy) as usize;
+                let new_seg_x = *seg_x as i32 + dx;
+                let new_seg_y = *seg_y as i32 + dy;
                 
-                if new_seg_x >= self.width || new_seg_y >= self.height {
+                if new_seg_x < 0 || new_seg_x >= self.width as i32 || new_seg_y < 0 || new_seg_y >= self.height as i32 {
                     can_move = false;
                     break;
                 }
+                
+                let new_seg_x = new_seg_x as usize;
+                let new_seg_y = new_seg_y as usize;
                 
                 // Check if destination is empty or will be vacated by another segment
                 let dest_tile = new_tiles[new_seg_y][new_seg_x];

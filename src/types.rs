@@ -10,6 +10,31 @@ pub enum MovementStrategy {
     Rest,                    // Stay put or minimal movement
 }
 
+impl MovementStrategy {
+    pub fn get_movement_vector(&self, rng: &mut impl Rng) -> (i32, i32) {
+        match self {
+            MovementStrategy::SeekFood(direction) => *direction,
+            MovementStrategy::Social(direction) => *direction,
+            MovementStrategy::Avoid(direction) => *direction,
+            MovementStrategy::Explore => {
+                let moves = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+                *moves.get(rng.gen_range(0..4)).unwrap()
+            },
+            MovementStrategy::Rest => (0, 0),
+        }
+    }
+    
+    pub fn should_move(&self, rng: &mut impl Rng) -> bool {
+        match self {
+            MovementStrategy::SeekFood(_) => rng.gen_bool(0.8), // High urgency for food
+            MovementStrategy::Social(_) => rng.gen_bool(0.4),   // Moderate social movement
+            MovementStrategy::Avoid(_) => rng.gen_bool(0.9),    // Very high urgency to avoid
+            MovementStrategy::Explore => rng.gen_bool(0.3),     // Casual exploration
+            MovementStrategy::Rest => rng.gen_bool(0.1),        // Very low movement when resting
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum Size {
     Small = 0,   // Faster growth, shorter life, weaker
