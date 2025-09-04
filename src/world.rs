@@ -222,7 +222,7 @@ impl World {
             for x in 0..self.width {
                 match self.tiles[y][x] {
                     TileType::PlantLeaf(_, size) | TileType::PlantBud(_, size) | 
-                    TileType::PlantFlower(_, size) => {
+                    TileType::PlantBranch(_, size) | TileType::PlantFlower(_, size) => {
                         // Check for support in 8 directions
                         let mut has_support = false;
                         for dy in -1..=1 {
@@ -232,7 +232,7 @@ impl World {
                                 let ny = (y as i32 + dy) as usize;
                                 if nx < self.width && ny < self.height {
                                     match self.tiles[ny][nx] {
-                                        TileType::PlantStem(_, _) | TileType::Dirt => {
+                                        TileType::PlantStem(_, _) | TileType::PlantBranch(_, _) | TileType::Dirt => {
                                             has_support = true;
                                             break;
                                         }
@@ -264,7 +264,7 @@ impl World {
                         // Check below
                         if y + 1 < self.height {
                             match self.tiles[y + 1][x] {
-                                TileType::PlantStem(_, _) | TileType::Dirt | TileType::Sand => {
+                                TileType::PlantStem(_, _) | TileType::PlantBranch(_, _) | TileType::Dirt | TileType::Sand => {
                                     has_support = true;
                                 }
                                 _ => {}
@@ -375,13 +375,51 @@ impl World {
                         let new_age = age.saturating_add(1);
                         let growth_rate = size.growth_rate_multiplier();
                         
-                        if new_age > 30 && rng.gen_bool(0.1 * growth_rate as f64) {
-                            // Bud matures into flower
-                            new_tiles[y][x] = TileType::PlantFlower(0, size);
+                        if new_age > 25 && rng.gen_bool(0.15 * growth_rate as f64) {
+                            // Bud can mature into branch or flower
+                            if rng.gen_bool(0.6) {
+                                // 60% chance to become a branch for Y-shaped growth
+                                new_tiles[y][x] = TileType::PlantBranch(0, size);
+                            } else {
+                                // 40% chance to become flower for reproduction
+                                new_tiles[y][x] = TileType::PlantFlower(0, size);
+                            }
                         } else if new_age > 50 {
                             new_tiles[y][x] = TileType::PlantWithered(0, size);
                         } else {
                             new_tiles[y][x] = TileType::PlantBud(new_age, size);
+                        }
+                    }
+                    TileType::PlantBranch(age, size) => {
+                        let new_age = age.saturating_add(1);
+                        let growth_rate = size.growth_rate_multiplier();
+                        
+                        if new_age > (100.0 * size.lifespan_multiplier()) as u8 {
+                            new_tiles[y][x] = TileType::PlantWithered(0, size);
+                        } else {
+                            new_tiles[y][x] = TileType::PlantBranch(new_age, size);
+                            
+                            // Branches grow diagonally and can spawn leaves/buds
+                            if rng.gen_bool(0.08 * growth_rate as f64) {
+                                // Diagonal growth patterns for Y-shaped branching
+                                let directions = [(-1, -1), (1, -1), (-1, 1), (1, 1)];
+                                if let Some(&(dx, dy)) = directions.choose(&mut rng) {
+                                    let nx = (x as i32 + dx) as usize;
+                                    let ny = (y as i32 + dy) as usize;
+                                    if nx < self.width && ny < self.height && self.tiles[ny][nx] == TileType::Empty {
+                                        if rng.gen_bool(0.7) {
+                                            // Extend the branch diagonally
+                                            new_tiles[ny][nx] = TileType::PlantBranch(0, size);
+                                        } else if rng.gen_bool(0.6) {
+                                            // Grow a leaf on the branch
+                                            new_tiles[ny][nx] = TileType::PlantLeaf(0, size);
+                                        } else {
+                                            // Grow a bud for further branching
+                                            new_tiles[ny][nx] = TileType::PlantBud(0, size);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     TileType::PlantFlower(age, size) => {
