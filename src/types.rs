@@ -106,6 +106,7 @@ impl Size {
 pub enum TileType {
     Empty,
     Dirt,
+    NutrientDirt(u8), // Dirt with absorbed nutrients (0-255 nutrient level)
     Sand,
     Water(u8),        // Water with depth/pressure (0-255), affects flow behavior
     PlantStem(u8, Size),   // Main structural support, age 0-255 (dies at ~100*lifespan_8x), size
@@ -130,6 +131,7 @@ impl TileType {
         match self {
             TileType::Empty => ' ',
             TileType::Dirt => '#',
+            TileType::NutrientDirt(_) => '▓', // Nutrient-rich dirt
             TileType::Sand => '.',
             TileType::Water(depth) => {
                 match depth {
@@ -161,6 +163,14 @@ impl TileType {
         match self {
             TileType::Empty => Color::Black,
             TileType::Dirt => Color::Rgb(101, 67, 33),
+            TileType::NutrientDirt(nutrient_level) => {
+                // Richer color based on nutrient level
+                let nutrient_intensity = (nutrient_level as f32 / 255.0).min(1.0);
+                let red = (101.0 + nutrient_intensity * 54.0) as u8;   // Up to 155
+                let green = (67.0 + nutrient_intensity * 88.0) as u8;  // Up to 155  
+                let blue = (33.0 + nutrient_intensity * 22.0) as u8;   // Up to 55
+                Color::Rgb(red, green, blue)
+            },
             TileType::Sand => Color::Yellow,
             TileType::Water(depth) => {
                 let _intensity = (depth as u16 * 255 / 255).min(255) as u8;
@@ -363,6 +373,14 @@ impl TileType {
     
     pub fn is_light_particle(self) -> bool {
         matches!(self, TileType::Seed(_, Size::Small) | TileType::Spore(_) | TileType::Nutrient | TileType::Water(0..=30))
+    }
+    
+    pub fn is_soil(self) -> bool {
+        matches!(self, TileType::Dirt | TileType::NutrientDirt(_))
+    }
+    
+    pub fn can_support_plants(self) -> bool {
+        matches!(self, TileType::Dirt | TileType::NutrientDirt(_) | TileType::Sand)
     }
 }
 

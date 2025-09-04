@@ -1,5 +1,6 @@
 use std::fmt;
 use std::collections::HashSet;
+use std::time::{Duration, Instant};
 use rand::{Rng, seq::SliceRandom, prelude::IteratorRandom};
 use crate::types::{TileType, Size, random_size, MovementStrategy, Season, Biome, random_biome};
 
@@ -29,6 +30,34 @@ pub struct EcosystemStats {
     pub biome_diversity: usize,   // Number of different biomes present
 }
 
+// Seed with velocity for projectile motion
+#[derive(Debug, Clone)]
+struct SeedProjectile {
+    x: f32,
+    y: f32,
+    velocity_x: f32,
+    velocity_y: f32,
+    seed_type: TileType, // The actual seed tile type
+    age: u8,
+    bounce_count: u8,    // How many times it has bounced
+}
+
+// Performance monitoring
+#[derive(Debug, Clone)]
+pub struct PerformanceMetrics {
+    pub total_update_time: Duration,
+    pub physics_time: Duration,
+    pub gravity_time: Duration,
+    pub projectiles_time: Duration,
+    pub wind_time: Duration,
+    pub plant_support_time: Duration,
+    pub nutrient_diffusion_time: Duration,
+    pub life_update_time: Duration,
+    pub spawn_entities_time: Duration,
+    pub ticks_per_second: f64,
+    pub frame_times: Vec<Duration>, // Last 60 frame times for averaging
+}
+
 pub struct World {
     pub tiles: Vec<Vec<TileType>>,
     pub biome_map: Vec<Vec<Biome>>, // Biome information for each region
@@ -44,6 +73,10 @@ pub struct World {
     pub wind_strength: f32,    // 0.0 to 1.0, strength of wind
     // Performance optimization: reuse buffers to reduce allocations
     tile_changes: Vec<TileChange>,
+    // Seed projectiles in flight
+    seed_projectiles: Vec<SeedProjectile>,
+    // Performance monitoring
+    pub performance: PerformanceMetrics,
 }
 
 impl World {
@@ -64,6 +97,20 @@ impl World {
             wind_direction: 0.0, // Start with easterly wind
             wind_strength: 0.3,  // Moderate wind strength
             tile_changes: Vec::with_capacity(1000), // Pre-allocate for common case
+            seed_projectiles: Vec::new(), // Start with no flying seeds
+            performance: PerformanceMetrics {
+                total_update_time: Duration::new(0, 0),
+                physics_time: Duration::new(0, 0),
+                gravity_time: Duration::new(0, 0),
+                projectiles_time: Duration::new(0, 0),
+                wind_time: Duration::new(0, 0),
+                plant_support_time: Duration::new(0, 0),
+                nutrient_diffusion_time: Duration::new(0, 0),
+                life_update_time: Duration::new(0, 0),
+                spawn_entities_time: Duration::new(0, 0),
+                ticks_per_second: 0.0,
+                frame_times: Vec::with_capacity(60),
+            },
         };
         
         world.generate_biome_map();
@@ -101,6 +148,7 @@ impl World {
         self.spawn_rain();
         self.update_physics();
         self.apply_gravity();
+        self.update_seed_projectiles();
         self.process_wind_effects();
         self.check_plant_support();
         self.diffuse_nutrients();
@@ -437,6 +485,106 @@ impl World {
         self.tiles = new_tiles;
     }
     
+    /// Update seed projectiles flying through the air
+    fn update_seed_projectiles(&mut self) {
+        let mut i = 0;
+        
+        // Process each projectile
+        while i < self.seed_projectiles.len() {
+            let mut projectile = self.seed_projectiles[i].clone();
+            
+            // Apply gravity
+            projectile.velocity_y += 0.2; // Gravity acceleration
+            
+            // Apply wind effects
+            let wind_x = self.wind_direction.cos() * self.wind_strength * 0.3;
+            let wind_y = self.wind_direction.sin() * self.wind_strength * 0.3;
+            
+            // Wind affects lighter seeds more
+            if let TileType::Seed(_, size) = projectile.seed_type {
+                let wind_susceptibility = match size {
+                    Size::Small => 1.0,
+                    Size::Medium => 0.7,
+                    Size::Large => 0.4,
+                };
+                projectile.velocity_x += wind_x * wind_susceptibility;
+                projectile.velocity_y += wind_y * wind_susceptibility;
+            }
+            
+            // Update position
+            projectile.x += projectile.velocity_x;
+            projectile.y += projectile.velocity_y;
+            
+            // Check bounds
+            if projectile.x < 0.0 || projectile.x >= self.width as f32 || 
+               projectile.y < 0.0 || projectile.y >= self.height as f32 {
+                // Remove projectile that went out of bounds
+                self.seed_projectiles.remove(i);
+                continue;
+            }
+            
+            let tile_x = projectile.x.floor() as usize;
+            let tile_y = projectile.y.floor() as usize;
+            
+            // Check for collision
+            match self.tiles[tile_y][tile_x] {
+                TileType::Empty => {
+                    // Continue flying
+                    self.seed_projectiles[i] = projectile;
+                    i += 1;
+                }
+                TileType::Water(_) => {
+                    // Seed lands in water, stops moving but stays alive
+                    self.tiles[tile_y][tile_x] = projectile.seed_type;
+                    self.seed_projectiles.remove(i);
+                }
+                _ => {
+                    // Hit solid object - try to bounce or stop
+                    if projectile.bounce_count < 2 && projectile.velocity_y > 1.0 {
+                        // Bounce with reduced velocity
+                        projectile.velocity_y = -projectile.velocity_y * 0.4;
+                        projectile.velocity_x *= 0.7;
+                        projectile.bounce_count += 1;
+                        
+                        // Move slightly away from collision point
+                        if projectile.velocity_y > 0.0 {
+                            projectile.y = tile_y as f32 + 1.1;
+                        } else {
+                            projectile.y = tile_y as f32 - 0.1;
+                        }
+                        
+                        self.seed_projectiles[i] = projectile;
+                        i += 1;
+                    } else {
+                        // Find empty adjacent space to land
+                        let adjacent_positions = [
+                            (tile_x, tile_y.saturating_sub(1)),
+                            (tile_x.saturating_sub(1), tile_y),
+                            (tile_x.saturating_add(1).min(self.width - 1), tile_y),
+                            (tile_x, tile_y.saturating_add(1).min(self.height - 1)),
+                        ];
+                        
+                        let mut landed = false;
+                        for (ax, ay) in adjacent_positions.iter() {
+                            if self.tiles[*ay][*ax] == TileType::Empty {
+                                self.tiles[*ay][*ax] = projectile.seed_type;
+                                landed = true;
+                                break;
+                            }
+                        }
+                        
+                        if !landed {
+                            // No space to land, seed is destroyed
+                            // Could become nutrient instead if we want
+                        }
+                        
+                        self.seed_projectiles.remove(i);
+                    }
+                }
+            }
+        }
+    }
+    
     /// Apply gravity to unsupported entities (pillbugs and loose objects)
     fn apply_gravity(&mut self) {
         let mut new_tiles = self.tiles.clone();
@@ -747,7 +895,7 @@ impl World {
             for (ax, ay) in absorption_positions.iter() {
                 if *ax < self.width && *ay < self.height {
                     match new_tiles[*ay][*ax] {
-                        TileType::Dirt | TileType::Sand => {
+                        tile if tile.can_support_plants() => {
                             // Water soaks into the earth, reducing water depth
                             let absorption_amount = match depth {
                                 0..=30 => depth, // Light water completely absorbed
@@ -1137,9 +1285,26 @@ impl World {
                 if let Some(&(dx, dy)) = directions.choose(&mut rng) {
                     let nx = (x as i32 + dx) as usize;
                     let ny = (y as i32 + dy) as usize;
-                    if nx < self.width && ny < self.height && self.tiles[ny][nx] == TileType::Empty {
-                        self.queue_tile_change(x, y, TileType::Empty);
-                        self.queue_tile_change(nx, ny, TileType::Nutrient);
+                    if nx < self.width && ny < self.height {
+                        match self.tiles[ny][nx] {
+                            TileType::Empty => {
+                                // Normal diffusion to empty space
+                                self.queue_tile_change(x, y, TileType::Empty);
+                                self.queue_tile_change(nx, ny, TileType::Nutrient);
+                            }
+                            TileType::Dirt if rng.gen_bool(0.3) => {
+                                // Nutrients can absorb into dirt, creating nutrient dirt
+                                self.queue_tile_change(x, y, TileType::Empty);
+                                self.queue_tile_change(nx, ny, TileType::NutrientDirt(80)); // Medium nutrient level
+                            }
+                            TileType::NutrientDirt(existing_level) if rng.gen_bool(0.2) => {
+                                // Add more nutrients to existing nutrient dirt
+                                let new_level = existing_level.saturating_add(30);
+                                self.queue_tile_change(x, y, TileType::Empty);
+                                self.queue_tile_change(nx, ny, TileType::NutrientDirt(new_level));
+                            }
+                            _ => {}
+                        }
                     }
                 }
             }
@@ -1160,8 +1325,23 @@ impl World {
             for x in 0..self.width {
                 match self.tiles[y][x] {
                     TileType::PlantStem(age, size) => {
-                        let new_age = age.saturating_add(1);
+                        let mut new_age = age.saturating_add(1);
                         let growth_rate = size.growth_rate_multiplier();
+                        
+                        // Check for adjacent nutrients to absorb (extends life)
+                        for dy in -1i32..=1 {
+                            for dx in -1i32..=1 {
+                                let nx = (x as i32 + dx) as usize;
+                                let ny = (y as i32 + dy) as usize;
+                                if nx < self.width && ny < self.height && rng.gen_bool(0.1) {
+                                    if self.tiles[ny][nx] == TileType::Nutrient {
+                                        new_tiles[ny][nx] = TileType::Empty;
+                                        new_age = new_age.saturating_sub(15); // Absorbing nutrients extends life
+                                        break;
+                                    }
+                                }
+                            }
+                        }
                         
                         if new_age > (100.0 * size.lifespan_multiplier()) as u8 {
                             new_tiles[y][x] = TileType::PlantWithered(0, size);
@@ -1280,19 +1460,41 @@ impl World {
                             let seed_chance = (0.08 * seasonal_growth_rate * wind_boost).min(1.0);
                             
                             if rng.gen_bool(seed_chance as f64) {
-                                // Try to place seed near the flower
-                                let nearby_positions = [
-                                    (x.saturating_sub(1), y), (x.saturating_add(1), y),
-                                    (x, y.saturating_sub(1)), (x, y.saturating_add(1)),
-                                    (x.saturating_sub(1), y.saturating_sub(1)), (x.saturating_add(1), y.saturating_add(1)),
-                                ];
+                                // Shoot seed with velocity instead of placing nearby
+                                let seed_size = if rng.gen_bool(0.7) { size } else { random_size(&mut rng) };
                                 
-                                if let Some((nx, ny)) = nearby_positions.iter().choose(&mut rng) {
-                                    if *nx < self.width && *ny < self.height && new_tiles[*ny][*nx] == TileType::Empty {
-                                        let seed_size = if rng.gen_bool(0.7) { size } else { random_size(&mut rng) };
-                                        new_tiles[*ny][*nx] = TileType::Seed(0, seed_size);
-                                    }
-                                }
+                                // Calculate shooting direction and velocity
+                                let angle = rng.gen_range(0.0..2.0 * std::f32::consts::PI);
+                                
+                                // Base velocity depends on flower size and wind
+                                let base_velocity = match size {
+                                    Size::Small => 1.5 + rng.gen_range(0.0..1.0),
+                                    Size::Medium => 2.0 + rng.gen_range(0.0..1.5),
+                                    Size::Large => 2.5 + rng.gen_range(0.0..2.0),
+                                };
+                                
+                                // Wind can boost seed shooting velocity
+                                let wind_boost = 1.0 + (self.wind_strength * 0.5);
+                                let velocity = base_velocity * wind_boost;
+                                
+                                // Prefer upward/outward directions for better dispersal
+                                let upward_bias = rng.gen_range(-0.5..0.0); // Slight upward bias
+                                
+                                let velocity_x = angle.cos() * velocity;
+                                let velocity_y = (angle.sin() * velocity) + upward_bias;
+                                
+                                // Create seed projectile
+                                let seed_projectile = SeedProjectile {
+                                    x: x as f32 + 0.5, // Center of flower tile
+                                    y: y as f32 + 0.5,
+                                    velocity_x,
+                                    velocity_y,
+                                    seed_type: TileType::Seed(0, seed_size),
+                                    age: 0,
+                                    bounce_count: 0,
+                                };
+                                
+                                self.seed_projectiles.push(seed_projectile);
                             }
                         }
                     }
@@ -1370,30 +1572,27 @@ impl World {
                         }
                     }
                     TileType::PlantRoot(age, size) => {
-                        let new_age = age.saturating_add(1);
+                        let mut new_age = age.saturating_add(1);
                         let growth_rate = size.growth_rate_multiplier();
+                        let mut nutrients_absorbed = 0u8;
                         
-                        if new_age > (200.0 * size.lifespan_multiplier()) as u8 {
-                            // Old roots wither and become nutrients
-                            new_tiles[y][x] = TileType::Nutrient;
-                        } else {
-                            new_tiles[y][x] = TileType::PlantRoot(new_age, size);
-                            
-                            // Roots actively absorb nearby nutrients
-                            let absorption_range = match size {
-                                Size::Small => 1,
-                                Size::Medium => 2,
-                                Size::Large => 3,
-                            };
-                            
-                            for dy in -(absorption_range as i32)..=(absorption_range as i32) {
-                                for dx in -(absorption_range as i32)..=(absorption_range as i32) {
-                                    let nx = (x as i32 + dx) as usize;
-                                    let ny = (y as i32 + dy) as usize;
-                                    if nx < self.width && ny < self.height {
-                                        if self.tiles[ny][nx] == TileType::Nutrient && rng.gen_bool((0.3 * growth_rate).min(1.0) as f64) {
-                                            // Absorb nutrients and potentially extend root network
+                        // Roots actively absorb nearby nutrients
+                        let absorption_range = match size {
+                            Size::Small => 1,
+                            Size::Medium => 2,
+                            Size::Large => 3,
+                        };
+                        
+                        for dy in -(absorption_range as i32)..=(absorption_range as i32) {
+                            for dx in -(absorption_range as i32)..=(absorption_range as i32) {
+                                let nx = (x as i32 + dx) as usize;
+                                let ny = (y as i32 + dy) as usize;
+                                if nx < self.width && ny < self.height {
+                                    match self.tiles[ny][nx] {
+                                        TileType::Nutrient if rng.gen_bool((0.3 * growth_rate).min(1.0) as f64) => {
+                                            // Absorb free nutrients
                                             new_tiles[ny][nx] = TileType::Empty;
+                                            nutrients_absorbed = nutrients_absorbed.saturating_add(20);
                                             
                                             // Chance to grow new root toward absorbed nutrient
                                             if rng.gen_bool(0.4) {
@@ -1403,14 +1602,51 @@ impl World {
                                                 let extend_y = (y as i32 + steps_y) as usize;
                                                 
                                                 if extend_x < self.width && extend_y < self.height 
-                                                    && matches!(new_tiles[extend_y][extend_x], TileType::Empty | TileType::Dirt | TileType::Sand) {
+                                                    && matches!(new_tiles[extend_y][extend_x], TileType::Empty) 
+                                                    && new_tiles[extend_y][extend_x].can_support_plants() {
                                                     new_tiles[extend_y][extend_x] = TileType::PlantRoot(0, size);
                                                 }
                                             }
-                                        }
+                                        },
+                                        TileType::NutrientDirt(nutrient_level) if rng.gen_bool((0.2 * growth_rate).min(1.0) as f64) => {
+                                            // Absorb nutrients from nutrient-rich dirt
+                                            let absorbed = (nutrient_level / 4).max(10); // Extract some nutrients
+                                            let remaining = nutrient_level.saturating_sub(absorbed);
+                                            nutrients_absorbed = nutrients_absorbed.saturating_add(absorbed);
+                                            
+                                            if remaining < 20 {
+                                                // Nutrient dirt becomes regular dirt
+                                                new_tiles[ny][nx] = TileType::Dirt;
+                                            } else {
+                                                new_tiles[ny][nx] = TileType::NutrientDirt(remaining);
+                                            }
+                                        },
+                                        TileType::Dirt if rng.gen_bool(0.05) => {
+                                            // Roots can merge with regular dirt, creating nutrient dirt
+                                            new_tiles[ny][nx] = TileType::NutrientDirt(40); // Small amount of nutrients
+                                            
+                                            // Root extends into the dirt
+                                            if rng.gen_bool(0.3) {
+                                                new_tiles[ny][nx] = TileType::PlantRoot(0, size);
+                                            }
+                                        },
+                                        _ => {}
                                     }
                                 }
                             }
+                        }
+                        
+                        // Nutrients absorbed delay aging (reset some age)
+                        if nutrients_absorbed > 0 {
+                            let age_reduction = (nutrients_absorbed as f32 * 0.3) as u8; 
+                            new_age = new_age.saturating_sub(age_reduction);
+                        }
+                        
+                        if new_age > (200.0 * size.lifespan_multiplier()) as u8 {
+                            // Old roots wither and become nutrients
+                            new_tiles[y][x] = TileType::Nutrient;
+                        } else {
+                            new_tiles[y][x] = TileType::PlantRoot(new_age, size);
                         }
                     }
                     TileType::PillbugHead(age, size) => {

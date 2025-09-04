@@ -217,13 +217,20 @@ Four distinct biome types create **microenvironmental diversity**:
 - **Ecosystem statistics system** with real-time monitoring and health metrics
 
 ### Latest Updates (Current Session)
+- **Seed velocity system**: Flowers now shoot seeds with physics-based trajectories instead of dropping them nearby
+- **Projectile mechanics**: Seeds have velocity, bounce physics, and wind interactions during flight
 - **Water wetting earth**: Water can now soak into dirt/sand instead of just accumulating
 - **Gravity for unsupported entities**: Pillbugs and plants fall as connected groups when unsupported
 - **Group-based falling**: Connected organisms maintain structural integrity during gravity events
 - **Extended lifespans**: All organisms now live 8x longer for better ecosystem observation
 - **Race condition fix**: Pillbugs no longer grow extra segments while falling (stability check added)
+- **Nutrient-rich dirt system**: New `NutrientDirt` tile type that stores absorbed nutrients
+- **Enhanced nutrient absorption**: Plants absorbing nutrients delay their aging and death timers
+- **Root-soil merging**: Plant roots can merge with dirt to create nutrient-rich soil
+- **Nutrient soil dynamics**: Free nutrients can absorb into dirt, creating nutrient reservoirs
+- **Advanced root feeding**: Roots can extract nutrients from nutrient-rich dirt over time
 - **Enhanced physics**: Better support detection for multi-segment organisms
-- **Improved realism**: More natural water behavior and object physics
+- **Improved realism**: More natural water behavior, object physics, and nutrient cycling
 
 ---
 
